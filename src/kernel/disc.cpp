@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstring>
 
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -11,6 +12,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace kernel {
 
@@ -44,6 +49,7 @@ std::string Upper(std::string s) {
 
 }  // namespace
 
+#ifdef _WIN32
 Disc::~Disc() {
     if (file_) CloseHandle(file_);
 }
@@ -61,11 +67,31 @@ uint32_t Disc::ReadAt(uint64_t at, void* out, uint32_t len) const {
     return got;
 }
 
+static void* OpenRead(const std::filesystem::path& path) {
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+    return h == INVALID_HANDLE_VALUE ? nullptr : h;
+}
+#else
+// the file's descriptor in file_: pread carries its own position as the overlapped reads do
+Disc::~Disc() {
+    if (file_) close(int(reinterpret_cast<intptr_t>(file_)));
+}
+
+uint32_t Disc::ReadAt(uint64_t at, void* out, uint32_t len) const {
+    ssize_t got = pread(int(reinterpret_cast<intptr_t>(file_)), out, len, off_t(at));
+    return got > 0 ? uint32_t(got) : 0;
+}
+
+static void* OpenRead(const std::filesystem::path& path) {
+    int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    return fd < 0 ? nullptr : reinterpret_cast<void*>(intptr_t(fd));
+}
+#endif
+
 bool Disc::Open(const std::filesystem::path& path, std::string& error) {
     path_ = path;
-    file_ = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-    if (file_ == INVALID_HANDLE_VALUE) {
-        file_ = nullptr;
+    file_ = OpenRead(path);
+    if (!file_) {
         error = "cannot open the file";
         return false;
     }

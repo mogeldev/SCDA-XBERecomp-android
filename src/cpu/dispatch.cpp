@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -5,6 +6,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -21,9 +25,6 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#else
-#include <x86intrin.h>
-#endif
 
 // the C runtime functions the game code DLL calls, passed on to the DLLs that have them
 #pragma comment(linker, "/EXPORT:memcpy=vcruntime140.memcpy")
@@ -42,6 +43,7 @@
 #pragma comment(linker, "/EXPORT:exp2=ucrtbase.exp2")
 #pragma comment(linker, "/EXPORT:ldexp=ucrtbase.ldexp")
 #pragma comment(linker, "/EXPORT:frexp=ucrtbase.frexp")
+#endif
 
 namespace {
 
@@ -69,13 +71,21 @@ namespace dispatch {
 
 // the game code DLL and its tables; data comes by name, as the delay loaded imports carry only functions
 bool Load(const std::filesystem::path& dll) {
+#ifdef _WIN32
     HMODULE m = LoadLibraryW(dll.c_str());
+    auto sym = [m](const char* name) { return reinterpret_cast<const void*>(GetProcAddress(m, name)); };
+#else
+    // the code .so is loaded already, as it brought this library in: this finds it again
+    void* m = dlopen(dll.c_str(), RTLD_NOW);
+    auto sym = [m](const char* name) { return static_cast<const void*>(dlsym(m, name)); };
+#endif
     if (!m) return false;
-    g_mappings = reinterpret_cast<const X86FuncMapping*>(GetProcAddress(m, "X86FuncMappings"));
-    g_continuations = reinterpret_cast<const uint32_t*>(GetProcAddress(m, "X86Continuations"));
-    auto* lo = reinterpret_cast<const uint32_t*>(GetProcAddress(m, "X86CodeBase"));
-    auto* hi = reinterpret_cast<const uint32_t*>(GetProcAddress(m, "X86CodeEnd"));
-    auto* entry = reinterpret_cast<const uint32_t*>(GetProcAddress(m, "X86EntryPoint"));
+    g_mappings = static_cast<const X86FuncMapping*>(sym("X86FuncMappings"));
+    g_continuations = static_cast<const uint32_t*>(sym("X86Continuations"));
+    auto* lo = static_cast<const uint32_t*>(sym("X86CodeBase"));
+    auto* hi = static_cast<const uint32_t*>(sym("X86CodeEnd"));
+    auto* entry = static_cast<const uint32_t*>(sym("X86EntryPoint"));
+
     if (!g_mappings || !g_continuations || !lo || !hi || !entry) return false;
     g_lo = *lo;
     g_hi = *hi;

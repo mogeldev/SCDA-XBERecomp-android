@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -11,6 +12,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
+
 
 #include "app/app.h"
 #include "app/translations.h"
@@ -158,7 +161,12 @@ X86_FUNC(sub_001ACEAB) {
     if (g_listener && ctx.ecx == g_listener && R32(ctx.esp + 4) == kExitId) {
         LOGI("exit: closing the window");
         g_asking = false;
+#ifdef _WIN32
         PostMessageW(static_cast<HWND>(app::Window()), WM_CLOSE, 0, 0);
+#else
+        kernel::Shutdown(0);
+#endif
+
         ctx.esp += 8;  // ret 4
         return;
     }

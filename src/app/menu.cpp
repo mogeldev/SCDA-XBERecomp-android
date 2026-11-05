@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -19,6 +20,11 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#define VK_ESCAPE 0x1B  // bindings keep Windows key codes
+#endif
+
+
 
 #include <imgui.h>
 
@@ -114,6 +120,10 @@ void StepName(uint32_t& value, const char* const (&names)[N], int step, char (&t
 
 // the monitor's modes smallest first, so Left steps down; the primary's for empty
 std::vector<Mode> Modes(const std::string& monitor) {
+#ifndef _WIN32
+    (void)monitor;
+    return {Desktop()};  // the screen's own
+#else
     std::vector<Mode> modes;
     std::wstring device(monitor.begin(), monitor.end());
     DEVMODEW dm{};
@@ -128,7 +138,9 @@ std::vector<Mode> Modes(const std::string& monitor) {
         return a.width != b.width ? a.width < b.width : a.height < b.height;
     });
     return modes;
+#endif
 }
+
 
 // in the game's language, as ImGui's UTF-8; caps for the panel's capitals (its own font has the accents)
 std::string Ui(std::string_view text, bool caps = true) {

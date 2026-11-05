@@ -6,6 +6,9 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- the game's system link sockets, which it also opens in the story -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
 
     <application android:label="SCDA"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"

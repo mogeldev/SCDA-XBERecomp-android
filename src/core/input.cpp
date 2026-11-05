@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -23,6 +24,11 @@
 #endif
 #include <windows.h>
 #include <xinput.h>
+#else
+#include "core/win32_keys.h"
+#endif
+
+
 
 #include <SDL3/SDL.h>
 
@@ -488,7 +494,11 @@ std::string Join(const std::vector<int>& vks, bool labels = false) {
     return s;
 }
 
+#ifdef _WIN32
 bool Active() { return g_hwnd && GetForegroundWindow() == g_hwnd && !g_blocked; }
+#else
+bool Active() { return g_hwnd && !g_blocked; }  // the app runs only while in the foreground
+#endif
 bool Down(int vk) {
     if (vk == kWheelUp || vk == kWheelDown) return NowMs() - g_wheel_ms[vk == kWheelDown] < kWheelTapMs;
     return GetAsyncKeyState(LiveVk(vk)) < 0;
@@ -833,9 +843,15 @@ void UpdatePads() {
     uint64_t now = NowMs();
     if (now == last) return;
     last = now;
-    SDL_PumpEvents();
     SDL_Event e;
+#ifdef __ANDROID__
+    // the main thread pumps there (android/host.cpp), and the lifecycle events are its: only the controllers' here
+    while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_GAMEPAD_ADDED, SDL_EVENT_GAMEPAD_REMOVED) == 1) {
+#else
+    SDL_PumpEvents();
     while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) == 1) {
+#endif
+
         if (e.type == SDL_EVENT_GAMEPAD_ADDED) AddPad(e.gdevice.which);
         else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) RemovePad(e.gdevice.which);
     }
@@ -1068,12 +1084,16 @@ uint16_t HeldOnAnyController() {
 
 void Init(void* hwnd) {
     g_hwnd = static_cast<HWND>(hwnd);
+#ifdef _WIN32
     RAWINPUTDEVICE mouse{1, 2, 0, g_hwnd};  // generic desktop page, mouse usage
     RegisterRawInputDevices(&mouse, 1, sizeof(mouse));
+#endif
     StartPads();
 }
 
 void OnRawInput(void* handle) {
+#ifdef _WIN32
+
     RAWINPUT ri;
     UINT size = sizeof(ri);
     UINT read = GetRawInputData(static_cast<HRAWINPUT>(handle), RID_INPUT, &ri, &size, sizeof(RAWINPUTHEADER));
@@ -1105,9 +1125,13 @@ void OnRawInput(void* handle) {
     for (size_t i = 0; i < kCount; i++) {
         if (ZoomOf(i) && std::ranges::find(g_binds[i], vk) != g_binds[i].end()) Notch(ZoomOf(i));
     }
+#else
+    (void)handle;
+#endif
 }
 
-void OnPress() { g_press_counts = Active() && Pointing(); }
+void OnPress()
+ { g_press_counts = Active() && Pointing(); }
 
 void OnClick() {
     if (g_press_counts.exchange(false) && Active() && Pointing()) g_clicks++;
