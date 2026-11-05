@@ -2694,6 +2694,7 @@ void VulkanBackend::CountFps() {
     double el = std::chrono::duration<double>(now - fps_t_).count();
     if (el >= 0.5) {
         app::g_fps = float(fps_n_ / el);
+        if (presents_ % 600 < fps_n_) LOGI("vulkan: %.1f fps", app::g_fps.load());
         fps_n_ = 0;
         fps_t_ = now;
     }

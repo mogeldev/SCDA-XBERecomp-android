@@ -75,7 +75,8 @@ if(ANDROID)
         ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp ${imgui_SOURCE_DIR}/imgui_widgets.cpp)
     target_include_directories(scda_host PRIVATE src ${GEN} ${opus_SOURCE_DIR}/include)
     target_include_directories(scda_host SYSTEM PRIVATE ${imgui_SOURCE_DIR} ${directx_headers_SOURCE_DIR}/include/directx)
-    target_compile_options(scda_host PRIVATE -fno-strict-aliasing)
+    # optimized in debug builds too: at -O0 the render thread and the renderer hold a phone to half its frame rate
+    target_compile_options(scda_host PRIVATE -O2 -fno-strict-aliasing)
     target_compile_definitions(scda_host PRIVATE ENABLE_HLSL)  # glslang's HLSL calls in its headers
     target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus vulkan log
         glslang glslang-default-resource-limits)
