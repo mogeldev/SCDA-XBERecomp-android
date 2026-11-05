@@ -758,6 +758,7 @@ private:
     void PresentBlit(const Target& t, bool pillarbox);
     bool AcquireImage(uint32_t& index);
     void CountFps();
+    void ApplySettings();
 
     SDL_Window* window_ = nullptr;
     VkInstance instance_ = VK_NULL_HANDLE;
@@ -1049,6 +1050,7 @@ bool VulkanBackend::CreateSwapchain() {
     swap_w_ = extent.width;
     swap_h_ = extent.height;
     transform_ = caps.currentTransform;
+    app::g_display_applied++;  // refresh the cached output/aspect after a surface size change
     vkGetSwapchainImagesKHR(dev_, swapchain_, &n, nullptr);
     swap_images_.resize(n);
     vkGetSwapchainImagesKHR(dev_, swapchain_, &n, swap_images_.data());
@@ -2700,6 +2702,37 @@ void VulkanBackend::CountFps() {
     }
 }
 
+// Called between frames, after the old frame was submitted. Retire its images with the new frame, not while the
+// GPU (or a late readback) may still be using them. Shader and pipeline caches do not depend on target dimensions.
+void VulkanBackend::ApplySettings() {
+    float scale;
+    uint32_t shadows;
+    {
+        std::lock_guard lock(app::UiLock());
+        scale = app::RenderScale(guest_h_);
+        shadows = app::Get().shadow_resolution;
+    }
+    if (std::fabs(scale - scale_) < 1e-4f && shadows == shadow_res_) return;
+    for (auto& [key, t] : targets_) {
+        Release(t.im);
+        Release(t.fb);
+    }
+    targets_.clear();
+    draw_rt_ = draw_ds_ = nullptr;
+    {
+        std::lock_guard lock(late_lock_);
+        for (auto& [data, l] : late_) {
+            Release(l.down);
+            for (Buffer& b : l.rb)
+                if (b.buf) Cur().dead_buffers.push_back(b);
+        }
+        late_.clear();
+    }
+    scale_ = scale;
+    shadow_res_ = shadows;
+    LOGI("vulkan: settings applied, render scale %.3f, shadow resolution %u", scale_, shadow_res_);
+}
+
 void VulkanBackend::Present(const Surface& front, bool pillarbox) {
     Target* t = EnsureTarget(front, false);
     if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
@@ -2736,6 +2769,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
     frame_++;
     BeginFrame();
     ReleaseOldTextures();
+    ApplySettings();
     CountFps();
     // Android ends the app without notice: the pipelines go to disk now and then
     constexpr uint64_t kSaveEvery = 600;

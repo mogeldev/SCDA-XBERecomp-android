@@ -1,6 +1,6 @@
 # SCDA Android port: notes
 
-State as of 2026-11-05. Branch `android-port`, last pushed commit `9a7852e`.
+State as of 2026-11-05. Branch `android-port`; latest work: controller settings and live render options.
 
 ## Scope
 
@@ -28,7 +28,7 @@ Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunc
 
 ## Next session, in this order
 
-1. A way to change settings on the phone. The ImGui overlay (menu.cpp) isn't drawn on Android, so today only `files/scda.toml` changes them.
+1. Restore the Android SDK path, build an APK and verify the on-phone settings on a device (see below).
 2. Test on a Mali device, if one can be found. This also tests the CPU BC decode path.
 3. The Windows player builder for the arm64 `libscda_code.so`. It must pass `-mno-outline-atomics`.
 4. Release APK via GitHub Actions. The CI build needs generated headers without the xbe.
@@ -58,11 +58,27 @@ Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunc
 
 Open points:
 - WaitGpuFrame is a no-op.
-- No settings change at runtime; the render scale is fixed at init.
 - Colour-blind modes and the ImGui overlay are left out.
 - One vkAllocateMemory per image (risk of hitting the allocation count limit).
 - Point size for points is not written.
-- Desktop() before the window may cache 1920x1080 for the aspect.
+
+## On-phone settings (implemented, not device-verified)
+
+- Use the game's **Options > Recomp Settings** and **Options > Controller** pages, with the controller. The existing
+  game-menu hook supplies these pages; Android no longer lists Mouse and Keyboard.
+- Display: render resolution, FOV, brightness, contrast, FPS cap/counter and FMV scale. Graphics: anisotropic
+  filtering, shadow resolution/distance. General: skip intros, language (restart required) and audio output
+  (automatic, mono or stereo). Unsupported desktop/SM3/network/texture options are hidden.
+- Controller sensitivity, inversion, deadzone, rumble, gyro and button bindings reuse the existing rows. The
+  push-to-talk binding is left out. Changes save to `files/scda.toml` through the shared settings code.
+- Vulkan applies render-scale and shadow-resolution changes between frames and retires old target/readback
+  resources behind frame fences. Creating the window/swapchain invalidates the cached output dimensions, so an
+  early 1920x1080 stand-in does not remain the aspect/render-scale basis.
+- Validation: Windows release build and Android-conditional syntax checks of the two menu files pass. The Android
+  host/Vulkan changes have not been NDK-compiled or device-tested: the configured SDK path
+  `C:\Users\admin\AppData\Local\Android\Sdk` is missing in this session.
+- Device checklist: navigate all sections with A/B/D-pad; change 50% to 40% and back without restarting; change
+  shadow resolution; check the FPS counter, brightness, controller rebind/defaults and persistence after relaunch.
 
 ## Test devices
 
@@ -78,7 +94,7 @@ Open points:
 ## Dev workflow
 
 - Direct build: `cmake -S . -B out/android-x86_64` with the NDK toolchain, `-DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared -DSCDA_DEV_CODE=ON`, then ninja.
-- APK: `android/gradlew.bat assembleDebug -PdevCode -Pabi=x86_64` (or `-Pabi=arm64-v8a` for the phone). Output: `android/build/outputs/apk/debug/scda-debug.apk`.
+- APK (from the repo root): `android/gradlew.bat -p android assembleDebug -PdevCode -Pabi=x86_64` (or `-Pabi=arm64-v8a` for the phone). Output: `android/build/outputs/apk/debug/scda-debug.apk`.
 - Game files go to `/sdcard/Android/data/io.github.mogeldev.scda/files/assets`.
 - Controller in the emulator: `python tools/padbridge/padbridge.py` turns an XInput pad on the PC into a uinput Xbox 360 pad (needs adb root). The pad shows up in the game about 9 s after the uinput device appears.
 - Logs: `adb logcat -s scda:*`. The file log is in `files/logs`.

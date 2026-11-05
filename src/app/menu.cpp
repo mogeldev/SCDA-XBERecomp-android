@@ -54,9 +54,14 @@ constexpr uint32_t kColourBlindModes[] = {0, 1, 2, 3};
 const char* const kColourBlindNames[] = {"OFF", "PROTANOPIA", "DEUTERANOPIA", "TRITANOPIA"};
 constexpr uint32_t kDumpFormats[] = {0, 1};
 const char* const kDumpFormatNames[] = {"PNG", "DDS"};
+#ifdef __ANDROID__
+constexpr uint32_t kAudioOutputs[] = {audio::kOutputAuto, audio::kOutputMono, audio::kOutputStereo};
+const char* const kAudioOutputNames[] = {"AUTOMATIC", "MONO", "2.0 STEREO"};
+#else
 constexpr uint32_t kAudioOutputs[] = {audio::kOutputAuto, audio::kOutputMono, audio::kOutputStereo,
                                       audio::kOutputSurround};
 const char* const kAudioOutputNames[] = {"AUTOMATIC", "MONO", "2.0 STEREO", "5.1 SURROUND"};
+#endif
 constexpr uint32_t kShadowSizes[] = {0, 512, 1024, 2048, 4096, 8192};
 constexpr uint32_t kShadowDistances[] = {1, 2, 4, 8};
 constexpr uint32_t kFpsCaps[] = {30, 60, 75, 90, 120, 144, 165, 240, 360, kFpsCapRefresh, 0};
@@ -346,6 +351,32 @@ bool VersusHides(int id) {
            id == kShadowDistance || id == kShadowFilter || id == kTickRate || id == kInputDelay || IsGyroRow(id);
 }
 
+// Android fills the screen and renders the Xbox SM1.1 look. Only offer settings its host actually applies.
+bool AndroidHides(int id) {
+#ifdef __ANDROID__
+    switch (id) {
+        // The Android window fills the display and Vulkan currently has the Xbox SM1.1 feature set.
+        case kMonitor: case kDisplayMode: case kResolution: case kVsync:
+        case kHdrOutput: case kColourBlind: case kShaderModel: case kHdr: case kToneMapping:
+        case kAmbientOcclusion: case kMsaa: case kSmaa: case kShadowFilter:
+        case kTextureReplacement: case kTextureDumping: case kDumpFormat:
+        // Android is campaign/controller only.
+        case kTickRate: case kInputDelay: case kJoinIp: case kMicrophone: case kPushToTalk:
+        case kPlayer1: case kPlayer2:
+        // Android always pauses when its surface goes away.
+        case kPauseOnFocusLoss:
+        // There is no mouse/keyboard page on the phone.
+        case kSensitivity: case kSensitivityVertical: case kFreeLookSensitivity: case kWeaponSensitivity:
+        case kSniperSensitivity: case kAimHorizontal: case kAimVertical: case kInvertMouse: case kInvertMouseX:
+            return true;
+        default:
+            return false;
+    }
+#else
+    return false;
+#endif
+}
+
 constexpr Row kSettingsRows[] = {
     {Kind::Heading, -1, "DISPLAY"},
     {Kind::Value, kMonitor, "MONITOR"},
@@ -436,7 +467,12 @@ const std::vector<Row>& PadRows() {
                                 {Kind::Heading, -1, "BUTTONS"}};
         size_t count = 0;
         const input::Action* actions = input::PadActions(&count);
-        for (size_t i = 0; i < count; i++) out.push_back({Kind::PadBind, int(i), actions[i].label});
+        for (size_t i = 0; i < count; i++) {
+#ifdef __ANDROID__
+            if (std::string_view(actions[i].id) == "push_to_talk") continue;
+#endif
+            out.push_back({Kind::PadBind, int(i), actions[i].label});
+        }
         return out;
     }();
     return list;
@@ -1291,7 +1327,7 @@ std::vector<std::string> Choices(const Row& row, int* current) {
 
 bool Shown(const Row& row) {
     std::lock_guard lock(UiLock());
-    bool hidden = row.id == kMicrophone || row.id == kPushToTalk || VersusHides(row.id);
+    bool hidden = row.id == kMicrophone || row.id == kPushToTalk || VersusHides(row.id) || AndroidHides(row.id);
     return row.kind != Kind::Value || !hidden;
 }
 
