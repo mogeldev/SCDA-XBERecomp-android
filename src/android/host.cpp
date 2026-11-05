@@ -176,6 +176,8 @@ extern "C" __attribute__((visibility("default"))) int ScdaMain(const char* code)
         LOGE("window: %s", SDL_GetError());
         return 1;
     }
+    // Settings/logging can ask for the aspect before the window exists: discard that stand-in output size.
+    app::g_display_applied++;
     input::Init(g_window);
     input::LoadBindings();
     if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), (app::ExeDir() / "hdd").string())) {
