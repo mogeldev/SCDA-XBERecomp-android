@@ -31,33 +31,26 @@ See [ANDROID_PORT_NOTES.md](ANDROID_PORT_NOTES.md) for implementation details, k
 
 ### To prepare the game code
 
-- Windows 10/11 x64 and approximately 1 GB of free space for the builder.
-- The packaged builder tools; players do not need Visual Studio, the Android SDK, Java or Python.
+- Windows 10/11 x64 and approximately 1 GB of free space for the builder, plus space for the extracted game and output ZIP. ISO input additionally needs temporary space for the full extracted disc.
+- The `SCDA-Android-ARM64-Builder.exe` GUI and its companion builder package; no command line, Visual Studio, Android SDK, Java, Python or separate runtime installation is needed on a standard Windows 10/11 installation.
 - An unmodified `default.xbe` matching the version accepted by the builder.
 
 The builder runs on Windows x64 but produces **Android ARM64 code**, not a Windows game executable.
 
 ## Installation
 
-### 1. Build your game-code library
+### 1. Create your import ZIP
 
-1. Extract the entire `SCDA-Android-ARM64-Builder.zip` into a writable folder.
-2. Put your `default.xbe` in the extracted builder's `assets/` folder, or drag it onto its `build.bat`.
-3. Run the builder's `build.bat` and wait for `libscda_code.so` to be created. Completed compilations are kept so an interrupted build can resume.
+1. Extract the complete builder ZIP, then run **`SCDA-Android-ARM64-Builder.exe`** from that folder. Keep the EXE beside its `compiler/`, scripts and `licenses/` folders. No installation or administrator access is needed.
+2. Click **Folder...** to select the extracted Xbox game folder containing `default.xbe`, `Default/` and `Media/`, or **ISO...** to select an original Xbox ISO. The bundled [extract-xiso](https://github.com/xboxdev/extract-xiso) extracts the image without modifying it.
+3. Click **Save as...** to choose an output ZIP outside the game folder, then click **Build game ZIP**.
+4. Wait for compilation and packaging to finish. The window shows the build log; completed compilations are cached for retrying failed builds.
 
-Use the builder and APK from the same revision. The builder validates the XBE's SHA-1; unsupported game versions need matching recompiler configs and game hooks.
+Use the builder and APK from the same revision. The builder validates the XBE's SHA-1; unsupported game versions need matching recompiler configs and game hooks. Resumable build files stay in the builder folder's `work/` directory; keep the complete extracted folder together. ISO input also needs space for the extracted disc contents, which are removed after the build.
 
 Full instructions: [Windows player builder](tools/android-builder/README.md).
 
-### 2. Create your import ZIP
-
-Put the generated library beside a folder containing your extracted campaign files, then run the builder's `package-game.ps1`:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File package-game.ps1
-```
-
-It creates `SCDA-game.zip`, including only the campaign content. Alternatively, ZIP **those items** manually, not their parent folder. The ZIP must have this layout:
+The GUI creates `SCDA-game.zip` with this layout automatically:
 
 ```text
 SCDA-game.zip
@@ -70,11 +63,11 @@ SCDA-game.zip
         └── … all original files and subfolders
 ```
 
-Use a standard unencrypted ZIP (ZIP64 is supported). Preserve the names shown above. Do not include `adv/`, `sc4_adv.xbe`, builder tools, README files, or a wrapping folder. Only campaign files and the game-code library are accepted.
+Only the campaign files and generated game-code library are included, not versus files or builder tools. This ZIP contains your game files and **must not be shared**.
 
-Do **not** include the builder's `compiler/libscda_host.so`. It is only a link stub; the real host library is supplied by the APK. This ZIP contains your game files and must not be shared.
+The builder's ISO support uses the pinned [extract-xiso](https://github.com/xboxdev/extract-xiso) tool and never modifies the source ISO. This product includes software developed by in <in@fishtank.com>. Its license is included in the builder package.
 
-### 3. Import on Android
+### 2. Import on Android
 
 1. Copy the ZIP to a normal phone folder, such as **Downloads**.
 2. Install the matching APK and launch SCDA.
@@ -88,7 +81,7 @@ Imported files live in `Android/data/io.github.mogeldev.scda/files/game/`. Saves
 
 To keep the first version simple, importing over an existing `game/` folder is refused. Uninstalling or clearing app data removes the imported game **and saves/settings**; back up anything you need first.
 
-### 4. Play
+### 3. Play
 
 Connect your controller and launch SCDA. Open **Options > Recomp Settings** or **Options > Controller** to adjust settings. Settings are saved to `files/scda.toml`; saves and shader caches also stay in the app's files directory.
 
