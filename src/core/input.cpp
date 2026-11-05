@@ -823,6 +823,16 @@ void AddPad(SDL_JoystickID id) {
     SDL_Gamepad** slot = std::find(std::begin(g_pads), std::end(g_pads), nullptr);
     if (slot == std::end(g_pads)) return;
     *slot = SDL_OpenGamepad(id);
+#ifdef __ANDROID__
+    // Android counts keyboards and remotes with a d-pad as controllers (the emulator's qwerty2): without a stick they
+    // would take a slot from the real one
+    if (*slot && !SDL_GamepadHasAxis(*slot, SDL_GAMEPAD_AXIS_LEFTX)) {
+        LOGI("input: %s is no controller, skipped", SDL_GetGamepadName(*slot) ? SDL_GetGamepadName(*slot) : "");
+        SDL_CloseGamepad(*slot);
+        *slot = nullptr;
+        return;
+    }
+#endif
     const char* name = *slot ? SDL_GetGamepadName(*slot) : SDL_GetError();
     LOGI("input: controller %d %s: %s", int(slot - g_pads) + 1, *slot ? "plugged in" : "failed to open",
          name ? name : "");
