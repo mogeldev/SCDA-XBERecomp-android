@@ -35,7 +35,11 @@ struct Settings {
     std::string monitor;             // its device name, \\.\DISPLAY2; empty the primary
     DisplayMode display_mode = DisplayMode::Borderless;
     uint32_t width = 0, height = 0;  // 0 is the desktop mode
+#ifdef __ANDROID__
+    uint32_t render_percent = 50;    // of the output height: a phone's GPU at 100% falls far short of 60 fps
+#else
     uint32_t render_percent = 100;   // of the output height
+#endif
     uint32_t fps_cap = kFpsCapRefresh;  // 0 unlimited, kFpsCapRefresh the monitor's refresh rate
     uint32_t fov = 75;               // horizontal degrees on a 4:3 frame, 75 is the game's
     uint32_t brightness = 50;        // 0 to 100 as SCCT PC's sliders, 50 each leaves the picture alone
