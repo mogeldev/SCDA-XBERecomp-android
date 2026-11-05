@@ -50,7 +50,15 @@ if(ANDROID)
     # dxgiformat.h alone: DXGI_FORMAT names the vertex and texture formats
     FetchContent_Declare(directx_headers GIT_REPOSITORY https://github.com/microsoft/DirectX-Headers.git
         GIT_TAG v1.620.1 GIT_SHALLOW TRUE SOURCE_SUBDIR none)
-    FetchContent_MakeAvailable(tomlplusplus imgui SDL3 opus directx_headers)
+    # glslang turns the generated HLSL into SPIR-V on the device (android/vulkan.cpp), without its tools and optimizer
+    set(ENABLE_HLSL ON CACHE BOOL "" FORCE)
+    set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+    set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+    set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+    set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(glslang GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git GIT_TAG 16.0.0 GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(tomlplusplus imgui SDL3 opus directx_headers glslang)
     set(GEN ${CMAKE_CURRENT_SOURCE_DIR}/generated/game)
 
     file(GLOB ANDROID_SOURCES CONFIGURE_DEPENDS src/*/*.cpp)
@@ -68,7 +76,9 @@ if(ANDROID)
     target_include_directories(scda_host PRIVATE src ${GEN} ${opus_SOURCE_DIR}/include)
     target_include_directories(scda_host SYSTEM PRIVATE ${imgui_SOURCE_DIR} ${directx_headers_SOURCE_DIR}/include/directx)
     target_compile_options(scda_host PRIVATE -fno-strict-aliasing)
-    target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus vulkan log)
+    target_compile_definitions(scda_host PRIVATE ENABLE_HLSL)  # glslang's HLSL calls in its headers
+    target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus vulkan log
+        glslang glslang-default-resource-limits)
     target_link_options(scda_host PRIVATE -Wl,-z,global -Wl,-z,undefs)
 
     add_library(main SHARED src/android/main.cpp)

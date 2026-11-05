@@ -19,7 +19,6 @@
 #include "audio/output.h"
 #include "core/input.h"
 #include "core/log.h"
-#include "gpu/backend.h"
 #include "image_symbols.h"
 #include "kernel/kernel.h"
 
@@ -156,35 +155,6 @@ void Pace() {
 }
 
 }  // namespace app
-
-namespace gpu {
-
-namespace {
-
-// shortcut: draws nothing until the Vulkan backend exists, so the game runs headless
-class NullBackend : public Backend {
-public:
-    bool Init(uint32_t width, uint32_t height) override {
-        LOGI("gpu: no renderer yet, %ux%u frames are dropped", width, height);
-        return true;
-    }
-    void Clear(const State&, uint32_t, const uint8_t*, uint32_t, uint32_t, float, uint32_t) override {}
-    void Draw(const State&, uint32_t, uint32_t, uint32_t, const uint8_t*) override {}
-    void Copy(const Surface&, const Surface&, uint32_t, uint32_t, uint32_t) override {}
-    void Present(const Surface&, bool) override {}
-    void Sync(uint32_t, uint32_t) override {}
-    void SyncLate(uint32_t) override {}
-    void Flush() override {}
-    void SetGamma(const uint8_t*) override {}
-};
-
-}  // namespace
-
-std::unique_ptr<Backend> CreateBackend() { return std::make_unique<NullBackend>(); }
-void SavePipelineCache() {}
-
-}  // namespace gpu
-
 
 // code: the game code .so as libmain.so loaded it
 extern "C" __attribute__((visibility("default"))) int ScdaMain(const char* code) {
