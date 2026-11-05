@@ -106,7 +106,13 @@ if(ANDROID)
     return()
 endif()
 
-FetchContent_MakeAvailable(zydis tomlplusplus imgui SDL3 opus)
+# The Android player-builder package needs only the Windows recompiler, not game assets or the desktop host.
+option(SCDA_RECOMP_ONLY "Build only xbe_recomp (no game files required)" OFF)
+if(SCDA_RECOMP_ONLY)
+    FetchContent_MakeAvailable(zydis tomlplusplus)
+else()
+    FetchContent_MakeAvailable(zydis tomlplusplus imgui SDL3 opus)
+endif()
 
 file(GLOB RECOMP_CONFIGS CONFIGURE_DEPENDS config/*.toml)
 
@@ -133,6 +139,9 @@ set_target_properties(xbe_recomp PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${COMPILER_
 target_include_directories(xbe_recomp PRIVATE src tools/recomp)
 target_compile_definitions(xbe_recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(xbe_recomp PRIVATE Zydis tomlplusplus::tomlplusplus)
+if(SCDA_RECOMP_ONLY)
+    return()
+endif()
 
 set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/imgui.cpp
