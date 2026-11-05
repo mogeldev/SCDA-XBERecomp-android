@@ -19,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <mutex>
 #include <regex>
 #include <string>
@@ -148,10 +149,12 @@ VkSamplerAddressMode Address(uint32_t v) {
     }
 }
 
-// Vulkan has three border colours without an extension: the nearest
+// Vulkan has three border colours without VK_EXT_custom_border_color: the nearest, the colour before the alpha (a
+// decal multiplied over a wall wants white past its edge, whatever its alpha)
 VkBorderColor Border(uint32_t argb) {
-    if ((argb >> 24) < 128) return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
-    return (argb & 0xFFFFFF) > 0x7F7F7F ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    uint32_t rgb = ((argb >> 16) & 255) + ((argb >> 8) & 255) + (argb & 255);
+    if (rgb > 3 * 127) return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    return (argb >> 24) < 128 ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
 }
 
 // the vertex formats vertex.cpp hands over
@@ -648,7 +651,12 @@ public:
     void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t src_rects, uint32_t dst_points) override;
     void Present(const Surface& front, bool pillarbox) override;
     void Sync(uint32_t data, uint32_t size) override;
-    void SyncLate(uint32_t data) override { Sync(data, 0); }
+    void SyncLate(uint32_t data) override {
+        if (!DeliverLate(data)) Sync(data, 0);
+        RecordLate(data);
+    }
+    bool DeliverLate(uint32_t data) override;
+    void RecordLate(uint32_t data) override;
     void Flush() override;
     void SetGamma(const uint8_t*) override {}
     void SavePipelines();
@@ -661,6 +669,7 @@ private:
         VkFence fence = VK_NULL_HANDLE;
         VkSemaphore acquired = VK_NULL_HANDLE;
         bool pending = false;
+        uint64_t serial = 0;  // submits_ of its last submission
         Buffer ring;
         VkDeviceSize used = 0;
         std::vector<VkDescriptorPool> pools;
@@ -730,7 +739,7 @@ private:
     void UploadTexture(Tex& tx, const TextureDesc& d, const FormatInfo& fi, const uint8_t* p, bool same);
     void StageLevel(VkCommandBuffer cb, const Image& im, uint32_t face, uint32_t level, uint32_t lw, uint32_t lh,
                     uint32_t ld, const std::vector<uint8_t>& px, uint32_t pitch, bool blocks);
-    VkSampler EnsureSampler(const VkSamplerCreateInfo& ci);
+    VkSampler EnsureSampler(const VkSamplerCreateInfo& ci, uint64_t border = 0);
     VkSampler StageSampler(const State& s, int i, const DrawTextures& stages, bool clamp);
     void ReleaseOldTextures();
     // shaders and pipelines
@@ -769,6 +778,8 @@ private:
     bool bc_ = false;
     bool aniso_ = false;
     bool wireframe_ = false;
+    bool custom_border_ = false;  // VK_EXT_custom_border_color, without a format
+    bool depth_linear_ = true;    // depth textures filter linearly
     VkFormat depth_fmt_ = VK_FORMAT_D24_UNORM_S8_UINT;
     VkDeviceSize ubo_align_ = 256;
     // swapchain, in the panel's own orientation
@@ -800,6 +811,24 @@ private:
     Frame frames_[kFrames];
     uint64_t frame_ = 0;
     uint64_t presents_ = 0;
+    // submissions: counted, and the newest one the GPU is known to have finished (any thread reads it)
+    uint64_t submits_ = 0;
+    std::atomic<uint64_t> completed_{0};
+    std::atomic<uint64_t> presents_seen_{0};
+    // surfaces locked without a wait (NOOVERWRITE): copies in flight, DeliverLate hands the newest finished one over
+    static constexpr int kLateSlots = 3;
+    struct Late {
+        Buffer rb[kLateSlots];
+        Image down;  // the target at the console's size, when it is upscaled
+        uint64_t serial[kLateSlots] = {};
+        uint64_t frame[kLateSlots] = {};
+        uint64_t delivered = 0;
+        uint32_t gw = 0, gh = 0, next = 0;
+    };
+    std::unordered_map<uint32_t, Late> late_;
+    std::mutex late_lock_;
+    VkImage GuestSizedSource(Target& t, Image& down);
+    void HostBarrier();
     // the pass being recorded: a target pair, or another view (other_)
     bool active_ = false;
     bool other_ = false;
@@ -904,6 +933,20 @@ bool VulkanBackend::CreateDevice() {
     ubo_align_ = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
 
     std::vector<const char*> want = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    uint32_t en = 0;
+    vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, nullptr);
+    std::vector<VkExtensionProperties> exts(en);
+    vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, exts.data());
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT cbf{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT};
+    for (const auto& e : exts) {
+        if (std::strcmp(e.extensionName, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME)) continue;
+        VkPhysicalDeviceFeatures2 q{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        q.pNext = &cbf;
+        vkGetPhysicalDeviceFeatures2(gpu_, &q);
+        // without a format: one sampler fits every texture format the stage may hold
+        custom_border_ = cbf.customBorderColors && cbf.customBorderColorWithoutFormat;
+    }
+    if (custom_border_) want.push_back(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
     VkPhysicalDeviceFeatures have;
     vkGetPhysicalDeviceFeatures(gpu_, &have);
     bc_ = have.textureCompressionBC;
@@ -919,8 +962,12 @@ bool VulkanBackend::CreateDevice() {
     qci.queueFamilyIndex = family_;
     qci.queueCount = 1;
     qci.pQueuePriorities = &priority;
+    VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    f2.features = on;
+    cbf.customBorderColors = cbf.customBorderColorWithoutFormat = VK_TRUE;
+    if (custom_border_) f2.pNext = &cbf;
     VkDeviceCreateInfo ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    ci.pEnabledFeatures = &on;
+    ci.pNext = &f2;
     ci.queueCreateInfoCount = 1;
     ci.pQueueCreateInfos = &qci;
     ci.enabledExtensionCount = uint32_t(want.size());
@@ -935,9 +982,16 @@ bool VulkanBackend::CreateDevice() {
         return (fp.optimalTilingFeatures & need) == need;
     };
     depth_fmt_ = usable(VK_FORMAT_D24_UNORM_S8_UINT) ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT;
-    LOGR("Vulkan: %s, API %u.%u, driver %08X, BC textures %s, depth %s", props_.deviceName,
+    auto filters = [&](VkFormat f) {
+        VkFormatProperties fp;
+        vkGetPhysicalDeviceFormatProperties(gpu_, f, &fp);
+        return (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+    };
+    depth_linear_ = filters(depth_fmt_) && filters(VK_FORMAT_D32_SFLOAT);
+    LOGR("Vulkan: %s, API %u.%u, driver %08X, BC textures %s, depth %s%s, border colours %s", props_.deviceName,
          VK_API_VERSION_MAJOR(props_.apiVersion), VK_API_VERSION_MINOR(props_.apiVersion), props_.driverVersion,
-         bc_ ? "yes" : "no (decoded)", depth_fmt_ == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8");
+         bc_ ? "yes" : "no (decoded)", depth_fmt_ == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
+         depth_linear_ ? " filtered" : " unfiltered", custom_border_ ? "exact" : "nearest");
     return true;
 }
 
@@ -1320,6 +1374,7 @@ void VulkanBackend::BeginFrame() {
         vkWaitForFences(dev_, 1, &f.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(dev_, 1, &f.fence);
         f.pending = false;
+        if (f.serial > completed_.load()) completed_.store(f.serial);
     }
     for (Image& im : f.dead_images) DestroyImage(im);
     for (Buffer& b : f.dead_buffers) DestroyBuffer(b);
@@ -1355,6 +1410,7 @@ void VulkanBackend::Submit(VkSemaphore wait, VkSemaphore signal) {
     VkResult r = vkQueueSubmit(queue_, 1, &si, f.fence);
     if (r != VK_SUCCESS) LOG_FIRST(8, "vulkan: submit failed: %d", int(r));
     f.pending = r == VK_SUCCESS;
+    f.serial = ++submits_;
 }
 
 void VulkanBackend::Flush() {
@@ -1769,8 +1825,11 @@ void VulkanBackend::BindTexture(const State& s, int stage, DrawTextures& stages)
     BindGuestTexture(stage, d, fi, stages);
 }
 
-VkSampler VulkanBackend::EnsureSampler(const VkSamplerCreateInfo& ci) {
-    uint64_t key = Hash(&ci, sizeof(ci));
+// border: the exact border colour (ARGB) a custom border sampler carries
+VkSampler VulkanBackend::EnsureSampler(const VkSamplerCreateInfo& ci, uint64_t border) {
+    VkSamplerCreateInfo k = ci;
+    k.pNext = nullptr;
+    uint64_t key = Hash(&k, sizeof(k), border);
     auto it = samplers_.find(key);
     if (it != samplers_.end()) return it->second;
     VkSampler s = VK_NULL_HANDLE;
@@ -1802,17 +1861,28 @@ VkSampler VulkanBackend::StageSampler(const State& s, int i, const DrawTextures&
     ci.minLod = float(t[kTssMaxMipLevel]);
     ci.maxLod = mip ? VK_LOD_CLAMP_NONE : ci.minLod;
     ci.borderColor = Border(t[kTssBorderColor]);
+    bool border = ci.addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER ||
+                  ci.addressModeV == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER ||
+                  ci.addressModeW == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    VkSamplerCustomBorderColorCreateInfoEXT cb{VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT};
+    if (border && custom_border_) {
+        Color(t[kTssBorderColor], cb.customBorderColor.float32);
+        ci.borderColor = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
+        ci.pNext = &cb;
+    }
     if (stages.info[i].shadow) {
         // the console tests texel OP r, Vulkan r OP texel
         static const uint8_t swap[8] = {0, 4, 2, 6, 1, 5, 3, 7};
-        ci.magFilter = ci.minFilter = lin(min) || lin(mag) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        // a depth format the GPU only reads unfiltered (some Adreno and Mali) takes the nearest texel
+        bool linear = (lin(min) || lin(mag)) && depth_linear_;
+        ci.magFilter = ci.minFilter = linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
         ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         ci.compareEnable = VK_TRUE;
         ci.compareOp = VkCompareOp(swap[Cmp(s.rs[kRsShadowFunc])]);
         ci.anisotropyEnable = VK_FALSE;
         ci.maxAnisotropy = 0;
     }
-    return EnsureSampler(ci);
+    return EnsureSampler(ci, ci.pNext ? (uint64_t(t[kTssBorderColor]) | 1ull << 32) : 0);
 }
 
 void VulkanBackend::ReleaseOldTextures() {
@@ -2413,26 +2483,9 @@ void VulkanBackend::Sync(uint32_t data, uint32_t) {
     auto it = targets_.find(TargetKey(data, false));
     if (it == targets_.end() || !it->second.drawn) return;
     Target& t = it->second;
-    EndRendering();
-    VkImage src = t.im.image;
     Image down;
-    if (t.w != t.gw || t.h != t.gh) {
-        ImageDesc d{kBgra, t.gw, t.gh};
-        d.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        if (!CreateImage(down, d)) return;
-        InitTargetImage(down, false);
-        BeginRenderingView(down.view, kBgra, VK_IMAGE_LAYOUT_GENERAL, t.gw, t.gh, false);
-        SetViewport(0, 0, float(t.gw), float(t.gh));
-        VkRect2D all{{0, 0}, {t.gw, t.gh}};
-        vkCmdSetScissor(Cur().cmd, 0, 1, &all);
-        BlitArgs b;
-        b.src = t.im.view;
-        b.alpha = true;
-        b.taps = uint32_t(std::ceil(float(t.w) / t.gw - 1e-3f));
-        Blit(b);
-        EndRendering();
-        src = down.image;
-    }
+    VkImage src = GuestSizedSource(t, down);
+    if (!src) return;
     Buffer rb;
     VkDeviceSize bytes = VkDeviceSize(t.gw) * t.gh * 4;
     if (!CreateBuffer(rb, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -2447,7 +2500,7 @@ void VulkanBackend::Sync(uint32_t data, uint32_t) {
     c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     c.imageExtent = {t.gw, t.gh, 1};
     vkCmdCopyImageToBuffer(Cur().cmd, src, VK_IMAGE_LAYOUT_GENERAL, rb.buf, 1, &c);
-    GlobalBarrier();
+    HostBarrier();
     Release(down);
     Flush();
     std::vector<uint8_t> px(rb.map, rb.map + bytes);
@@ -2459,6 +2512,108 @@ void VulkanBackend::Sync(uint32_t data, uint32_t) {
     t.read = std::move(px);
     t.drawn = false;
     t.sig = MemSig(t.data, t.bytes);
+}
+
+// the target as a BGRA image at the console's size, shrunk into down (made when empty) when it is upscaled; outside
+// any pass, null when it fails
+VkImage VulkanBackend::GuestSizedSource(Target& t, Image& down) {
+    EndRendering();
+    if (t.w == t.gw && t.h == t.gh) return t.im.image;
+    if (!down.image) {
+        ImageDesc d{kBgra, t.gw, t.gh};
+        d.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        if (!CreateImage(down, d)) return VK_NULL_HANDLE;
+        InitTargetImage(down, false);
+    }
+    BeginRenderingView(down.view, kBgra, VK_IMAGE_LAYOUT_GENERAL, t.gw, t.gh, false);
+    SetViewport(0, 0, float(t.gw), float(t.gh));
+    VkRect2D all{{0, 0}, {t.gw, t.gh}};
+    vkCmdSetScissor(Cur().cmd, 0, 1, &all);
+    BlitArgs b;
+    b.src = t.im.view;
+    b.alpha = true;
+    b.taps = uint32_t(std::ceil(float(t.w) / t.gw - 1e-3f));
+    Blit(b);
+    EndRendering();
+    return down.image;
+}
+
+// copies to buffers the CPU reads once the frame's fence is through
+void VulkanBackend::HostBarrier() {
+    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(Cur().cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, nullptr,
+                         0, nullptr);
+}
+
+// any thread: the newest finished copy into guest memory, false when there is none recent
+bool VulkanBackend::DeliverLate(uint32_t data) {
+    std::lock_guard lock(late_lock_);
+    auto it = late_.find(data);
+    if (it == late_.end()) return false;
+    Late& l = it->second;
+    uint64_t done = completed_.load(), now = presents_seen_.load();
+    int best = -1;
+    for (int i = 0; i < kLateSlots; i++) {
+        bool finished = l.serial[i] && l.serial[i] <= done;
+        bool recent = now - l.frame[i] <= uint64_t(kLateSlots) + 1;
+        if (finished && recent && (best < 0 || l.serial[i] > l.serial[best])) best = i;
+    }
+    if (best < 0) return false;
+    if (l.serial[best] > l.delivered) {
+        uint32_t pitch = GuestPitch(l.gw);
+        uint8_t* dst = static_cast<uint8_t*>(kernel::HostPtr(data));
+        for (uint32_t y = 0; y < l.gh; y++) {
+            std::memcpy(dst + size_t(y) * pitch, l.rb[best].map + size_t(y) * l.gw * 4, l.gw * 4);
+        }
+        l.delivered = l.serial[best];
+    }
+    return true;
+}
+
+// render thread, in order with the draws: a copy of the surface for a later lock
+void VulkanBackend::RecordLate(uint32_t data) {
+    auto it = targets_.find(TargetKey(data, false));
+    if (it == targets_.end()) return;
+    Target& t = it->second;
+    // what DeliverLate or Sync left in guest memory is no CPU write to upload back
+    t.sig = MemSig(t.data, t.bytes);
+    t.read.clear();
+    std::lock_guard lock(late_lock_);
+    Late& l = late_[data];
+    if (l.gw != t.gw || l.gh != t.gh) {
+        for (Buffer& b : l.rb) {
+            if (b.buf) Cur().dead_buffers.push_back(b);
+        }
+        Release(l.down);
+        l = Late{};
+        l.gw = t.gw;
+        l.gh = t.gh;
+    }
+    // unless the GPU is a whole ring behind
+    uint32_t slot = l.next;
+    if (l.serial[slot] > completed_.load()) return;
+    VkDeviceSize bytes = VkDeviceSize(t.gw) * t.gh * 4;
+    if (!l.rb[slot].buf &&
+        !CreateBuffer(l.rb[slot], bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
+        !CreateBuffer(l.rb[slot], bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        return;
+    }
+    VkImage src = GuestSizedSource(t, l.down);
+    if (!src) return;
+    VkBufferImageCopy c{};
+    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.imageExtent = {t.gw, t.gh, 1};
+    vkCmdCopyImageToBuffer(Cur().cmd, src, VK_IMAGE_LAYOUT_GENERAL, l.rb[slot].buf, 1, &c);
+    HostBarrier();
+    GlobalBarrier();
+    l.serial[slot] = submits_ + 1;  // the next submission carries it
+    l.frame[slot] = presents_;
+    l.next = (slot + 1) % kLateSlots;
 }
 
 void VulkanBackend::UploadGammaRamp(uint32_t brightness, uint32_t contrast) {
@@ -2576,6 +2731,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
         if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_ERROR_SURFACE_LOST_KHR || r == VK_SUBOPTIMAL_KHR) recreate_ = true;
     }
     presents_++;
+    presents_seen_.store(presents_);
     frame_++;
     BeginFrame();
     ReleaseOldTextures();
