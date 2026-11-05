@@ -22,12 +22,24 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 try {
     $zip = [IO.Compression.ZipFile]::Open($temp, [IO.Compression.ZipArchiveMode]::Create)
     try {
+        $buffer = New-Object byte[] (1MB)
+        $written = 0L
+        $watch = [Diagnostics.Stopwatch]::StartNew()
         function Add-File([string]$file, [string]$name) {
             $entry = $zip.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
             $source = [IO.File]::OpenRead($file)
             try {
                 $target = $entry.Open()
-                try { $source.CopyTo($target) } finally { $target.Dispose() }
+                try {
+                    while (($count = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                        $target.Write($buffer, 0, $count)
+                        $script:written += $count
+                        if ($watch.ElapsedMilliseconds -ge 500) {
+                            Write-Host ('ZIP: {0:N1} MiB packed | {1}' -f ($script:written / 1MB), $name)
+                            $watch.Restart()
+                        }
+                    }
+                } finally { $target.Dispose() }
             } finally { $source.Dispose() }
         }
         Add-File $library 'libscda_code.so'

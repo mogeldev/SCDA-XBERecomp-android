@@ -9,11 +9,11 @@ try {
     $compiler = Join-Path $PSScriptRoot 'compiler'
     foreach ($name in 'xbe_recomp.exe', 'clang++.exe', 'ld.lld.exe', 'ninja.exe', 'libscda_host.so', 'xbe.sha1') {
         if (-not (Test-Path -LiteralPath (Join-Path $compiler $name))) {
-            throw "Missing compiler/$name. Extract the whole builder zip first."
+            throw "Missing compiler/$name. Extract the complete matching builder package before running the GUI."
         }
     }
     if (-not (Test-Path -LiteralPath $Xbe -PathType Leaf)) {
-        throw 'Put your extracted default.xbe in assets, or drag it onto build.bat. ISO input is not supported.'
+        throw 'Missing default.xbe. Select a valid extracted Xbox game folder or ISO in the builder GUI.'
     }
     $Xbe = (Resolve-Path -LiteralPath $Xbe).Path
     $expected = (Get-Content -LiteralPath (Join-Path $compiler 'xbe.sha1') -Raw).Trim()
@@ -22,13 +22,20 @@ try {
     }
     if (-not $Jobs) {
         $memory = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1KB
-        $Jobs = [int][Math]::Max(1, [Math]::Min(64, [Math]::Min([Environment]::ProcessorCount, [Math]::Floor($memory / 512MB))))
+        # Leave one CPU thread available for the desktop and GUI.
+        $Jobs = [int][Math]::Max(1, [Math]::Min(64, [Math]::Min([Environment]::ProcessorCount - 1, [Math]::Floor($memory / 512MB))))
     }
     $work = Join-Path $PSScriptRoot 'work'
     New-Item -ItemType Directory -Force -Path $work, (Join-Path $work 'generated'), (Join-Path $work 'obj') | Out-Null
     # An exclusive handle prevents two builders from writing the same sources and objects.
     $lock = [IO.File]::Open((Join-Path $work 'build.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
     try {
+        # A stable input path preserves Ninja state across fresh ISO extraction directories.
+        $inputXbe = Join-Path $work 'default.xbe'
+        if (-not (Test-Path -LiteralPath $inputXbe) -or (Get-FileHash -LiteralPath $inputXbe -Algorithm SHA1).Hash -ne $expected) {
+            Copy-Item -LiteralPath $Xbe -Destination $inputXbe -Force
+        }
+        $Xbe = $inputXbe
         function NinjaPath([string]$path) {
             return $path.Replace('\', '/').Replace('$', '$$').Replace(':', '$:').Replace(' ', '$ ')
         }
@@ -68,8 +75,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $work 'libscda_code.so') -Destination (Join-Path $PSScriptRoot 'libscda_code.so') -Force
     } finally { $lock.Dispose() }
     Write-Host "`nReady: $(Join-Path $PSScriptRoot 'libscda_code.so')"
-    Write-Host 'Put your campaign files in assets/, then run package-game.ps1 to make the Android import ZIP:'
-    Write-Host '  ZIP root: libscda_code.so and assets/default.xbe, assets/Default/, assets/Media/'
+    Write-Host 'Game-code compilation complete.'
 } catch {
     Write-Host "`nERROR: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
