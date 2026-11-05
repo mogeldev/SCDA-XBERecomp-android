@@ -39,7 +39,7 @@ try {
     Copy-Item -LiteralPath "$repo/config/scda_v2.toml", "$repo/config/xdk_symbols.toml" -Destination "$stage/compiler/config"
     Copy-Item -LiteralPath "$repo/src/cpu/x86_ops.h", "$repo/src/cpu/x86_context.h" -Destination "$stage/compiler/include/cpu"
     Copy-Item "$repo/src/cpu/freestanding/*" -Destination "$stage/compiler/include/freestanding"
-    Copy-Item -LiteralPath "$PSScriptRoot/build.bat", "$PSScriptRoot/build.ps1", "$PSScriptRoot/README.md" -Destination $stage
+    Copy-Item -LiteralPath "$PSScriptRoot/build.bat", "$PSScriptRoot/build.ps1", "$PSScriptRoot/package-game.ps1", "$PSScriptRoot/README.md" -Destination $stage
     Set-Content -LiteralPath "$stage/assets/README.txt" -Value 'Put your legally owned default.xbe here, or drag it onto build.bat.' -Encoding UTF8
     Copy-Item -LiteralPath "$repo/LICENSE" -Destination "$stage/licenses/SCDA.txt"
     Copy-Item -LiteralPath "$repo/tools/LLVM-LICENSE.txt" -Destination "$stage/licenses/LLVM.txt"

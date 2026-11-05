@@ -68,7 +68,8 @@ try {
         Copy-Item -LiteralPath (Join-Path $work 'libscda_code.so') -Destination (Join-Path $PSScriptRoot 'libscda_code.so') -Force
     } finally { $lock.Dispose() }
     Write-Host "`nReady: $(Join-Path $PSScriptRoot 'libscda_code.so')"
-    Write-Host 'Copy it to Android/data/io.github.mogeldev.scda/files/ and restart SCDA.'
+    Write-Host 'Put your campaign files in assets/, then run package-game.ps1 to make the Android import ZIP:'
+    Write-Host '  ZIP root: libscda_code.so and assets/default.xbe, assets/Default/, assets/Media/'
 } catch {
     Write-Host "`nERROR: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

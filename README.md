@@ -49,31 +49,46 @@ Use the builder and APK from the same revision. The builder validates the XBE's 
 
 Full instructions: [Windows player builder](tools/android-builder/README.md).
 
-### 2. Install the Android app and copy the files
+### 2. Create your import ZIP
 
-Install the matching APK, launch it once to create its folders, then close it. Copy the library and extracted game files to:
+Put the generated library beside a folder containing your extracted campaign files, then run the builder's `package-game.ps1`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File package-game.ps1
+```
+
+It creates `SCDA-game.zip`, including only the campaign content. Alternatively, ZIP **those items** manually, not their parent folder. The ZIP must have this layout:
 
 ```text
-Android/data/io.github.mogeldev.scda/files/
+SCDA-game.zip
 ├── libscda_code.so
 └── assets/
     ├── default.xbe
     ├── Default/
+    │   └── … all original files and subfolders
     └── Media/
+        └── … all original files and subfolders
 ```
 
-Use a PC over USB or ADB if Android's file manager restricts access to `Android/data`. For example, from a folder containing the generated library and your `assets/` directory:
+Use a standard unencrypted ZIP (ZIP64 is supported). Preserve the names shown above. Do not include `adv/`, `sc4_adv.xbe`, builder tools, README files, or a wrapping folder. Only campaign files and the game-code library are accepted.
 
-```bat
-adb install -r scda-debug.apk
-adb shell am force-stop io.github.mogeldev.scda
-adb push libscda_code.so /sdcard/Android/data/io.github.mogeldev.scda/files/
-adb push assets/. /sdcard/Android/data/io.github.mogeldev.scda/files/assets/
-```
+Do **not** include the builder's `compiler/libscda_host.so`. It is only a link stub; the real host library is supplied by the APK. This ZIP contains your game files and must not be shared.
 
-Do **not** copy the builder's `compiler/libscda_host.so` to the phone. It is only a link stub; the real host library is supplied by the APK.
+### 3. Import on Android
 
-### 3. Play
+1. Copy the ZIP to a normal phone folder, such as **Downloads**.
+2. Install the matching APK and launch SCDA.
+3. Select **Import game ZIP** and choose your ZIP in Android's system file picker.
+4. Keep the setup screen open while extraction runs. Progress shows the extracted size and current file. Press Back to cancel; an interrupted or failed import can be retried from the beginning.
+5. SCDA starts automatically after a successful import. Later launches skip setup.
+
+No root, broad storage permission, or manual access to `Android/data` is required. Leave enough free space for the extracted game in addition to the ZIP (campaign files are around 3.5 GB, depending on the dump). You can delete the ZIP after a successful import.
+
+Imported files live in `Android/data/io.github.mogeldev.scda/files/game/`. Saves and settings remain outside that folder and are not overwritten by the importer. Existing USB/ADB installs using `files/assets/` and `files/libscda_code.so` still work without reimporting.
+
+To keep the first version simple, importing over an existing `game/` folder is refused. Uninstalling or clearing app data removes the imported game **and saves/settings**; back up anything you need first.
+
+### 4. Play
 
 Connect your controller and launch SCDA. Open **Options > Recomp Settings** or **Options > Controller** to adjust settings. Settings are saved to `files/scda.toml`; saves and shader caches also stay in the app's files directory.
 
@@ -123,7 +138,7 @@ From the repository root, build an ARM64 debug APK **without game code embedded*
 android\gradlew.bat -p android assembleDebug -Pabi=arm64-v8a
 ```
 
-Output: `android/build/outputs/apk/debug/scda-debug.apk`. Supply `libscda_code.so` separately using the player builder.
+Output: `android/build/outputs/apk/debug/scda-debug.apk`. Supply `libscda_code.so` in your import ZIP using the player builder.
 
 For local development only, add `-PdevCode` to compile and embed the generated game code in the APK. **Do not distribute an APK built with `-PdevCode`.** Android x86_64 emulator builds are available with `-Pabi=x86_64`; this is a development target, not PC gameplay support.
 
