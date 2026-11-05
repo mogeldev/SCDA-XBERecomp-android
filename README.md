@@ -1,213 +1,136 @@
-# Splinter Cell: Double Agent - XBE Recomp
-An unofficial native PC port of the original Xbox version of Splinter Cell: Double Agent via static recompilation, built into a 64 bit Windows executable. The game's x86 code is translated to C++ ahead of time, the Xbox kernel, Direct3D and DirectSound calls are implemented on Windows, and everything is drawn with Direct3D 12 and played through XAudio2. Made with the [Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp) tool, created for this game originally.
+# Splinter Cell: Double Agent — Android XBE Recomp
 
-> [!NOTE]
-> This project does not include any game assets. You must provide the files from your own legally acquired copy of the game to install or build.
+An unofficial native **Android port** of the original Xbox version of *Tom Clancy's Splinter Cell: Double Agent*, using static recompilation. The game's x86 code is translated to C++ ahead of time and compiled for Android ARM64. The Android runtime uses Vulkan for graphics and SDL3 for controllers and audio.
+
+**This fork supports Android only. PC gameplay is not supported and will not be maintained.** Windows is used only to prepare the Android game-code library. For the separate PC port, visit the [upstream project](https://github.com/TGP482/SCDA-XBERecomp).
+
+> [!IMPORTANT]
+> No game assets or recompiled game code are included. You must supply the files from your own legally acquired copy of the **original Xbox game**, not the PC or Xbox 360 version.
+
+## Current status
+
+- Campaign runs on Android ARM64; tested on a Xiaomi Redmi Note 13 Pro 5G with Adreno 710.
+- Controller navigation, settings, live render-scale/shadow changes and settings persistence have been verified on that device.
+- Mali support is intended, with CPU decoding for unsupported BC texture formats, but has **not yet been tested on a Mali device**.
+- The Windows player builder has been tested end to end, including loading its generated library on the phone.
+- APK builds and builder packaging are performed locally. GitHub Actions release packaging is not planned.
+
+See [ANDROID_PORT_NOTES.md](ANDROID_PORT_NOTES.md) for implementation details, known renderer limitations and the device test history.
+
+## Requirements
+
+### To play
+
+- Android 11 or newer (API 30+).
+- An ARM64 device with Vulkan 1.1 support. Performance depends on the device and render resolution.
+- An SDL-compatible controller; an 8BitDo Ultimate 2C over Bluetooth has been tested.
+- Your extracted Xbox game files: `default.xbe`, `Default/` and `Media/`.
+- A matching Android APK and Windows player-builder package.
+
+**Controller only:** no touch controls, mouse or keyboard gameplay.
+
+### To prepare the game code
+
+- Windows 10/11 x64 and approximately 1 GB of free space for the builder.
+- The packaged builder tools; players do not need Visual Studio, the Android SDK, Java or Python.
+- An unmodified `default.xbe` matching the version accepted by the builder.
+
+The builder runs on Windows x64 but produces **Android ARM64 code**, not a Windows game executable.
 
 ## Installation
-The latest version of [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp/releases) can be found in the Releases page.
 
-- Place your game files in the `assets` folder. This can be an ISO, or the extracted data files.
-- Run `SCDA.exe`. The first start compiles the game's code for your PC, this only happens once.
-- Recomp Settings can be adjusted in the in-game options menu while the game is running, or through the Settings overlay, which is opened with <kbd>F10</kbd> by default.
+### 1. Build your game-code library
 
-<img width="1920" height="1080" alt="Recomp Settings" src="https://github.com/user-attachments/assets/d13e1fb6-ba97-4067-84e1-c2362d66d7c4"/>
+1. Extract the entire `SCDA-Android-ARM64-Builder.zip` into a writable folder.
+2. Put your `default.xbe` in the extracted builder's `assets/` folder, or drag it onto its `build.bat`.
+3. Run the builder's `build.bat` and wait for `libscda_code.so` to be created. Completed compilations are kept so an interrupted build can resume.
 
-## Features
-### Display
-- **Monitor** - Picks the monitor the game shows on, for Fullscreen and Borderless (and where Windowed opens). Lists every connected monitor by its Windows number and desktop resolution.
-- **Display Mode** - Switch between Fullscreen, Borderless and Windowed.
-- **Resolution** - Lists every mode your monitor reports and defaults to your desktop resolution, replacing the original 640x480 resolution.
-- **Render Resolution** - Renders the game at 20% to 200% of the output resolution, allowing supersampling or downscaling independent of the window size.
-- **Field of View** - Sets the horizontal field of view during gameplay from 45 to 140 degrees, with 75 being the game's default. Cutscenes, scopes, gadget views and lock picking keep the original.
-- **Max Frame Rate** - Caps the frame rate to your monitor's refresh rate or a custom value, or removes the cap entirely, replacing the Xbox's 30 FPS limiter.
-- **V-Sync** - Reduces screen tearing.
-- **HDR Output** - Enables HDR10 output on displays with Windows HDR turned on, detected automatically. Highlights extend up to the display's peak brightness.
-- **FPS Counter** - Displays the frame rate on screen.
-- **FMV Scale** - Choose between Fill, which makes the FMVs fill widescreen displays, and 4:3, which shows them in a 4:3 frame as on the original Xbox.
-- **Colour Blind Mode** - Adjusts the colours for Protanopia, Deuteranopia or Tritanopia.
+Use the builder and APK from the same revision. The builder validates the XBE's SHA-1; unsupported game versions need matching recompiler configs and game hooks.
 
-### Graphics
-- **Multisample Antialiasing (MSAA)** - Enables 2x, 4x or 8x MSAA to smooth jagged edges while preserving a sharp image. MSAA does not smooth alpha-tested edges such as fences and foliage.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/150a11f4-c437-4014-9ee2-b7ee1857713b"></td>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/d84194f6-5175-4953-8390-df206cc6cedc"></td>
-    </tr>
-    <tr>
-      <td align="center">Off</td>
-      <td align="center">MSAA 8x</td>
-    </tr>
-  </table>
-</div>
+Full instructions: [Windows player builder](tools/android-builder/README.md).
 
-- **Subpixel Morphological Antialiasing (SMAA)** - Enables SMAA to smooth jagged edges across the whole frame with a softer image. SMAA also smooths alpha-tested edges such as fences and foliage, and can be combined with MSAA.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/daff599b-8bf2-4156-a3e3-a5f1ebd87617"></td>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/5dc8e76a-fcd7-4b8e-9964-f76cc1cfdde3"></td>
-    </tr>
-    <tr>
-      <td align="center">Off</td>
-      <td align="center">SMAA</td>
-    </tr>
-  </table>
-</div>
+### 2. Install the Android app and copy the files
 
+Install the matching APK, launch it once to create its folders, then close it. Copy the library and extracted game files to:
 
-- **Anisotropic Filtering** - Forces the selected anisotropic filtering level on all textures.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/594acdec-3a98-4dc5-ba6c-62e238db3895"></td>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/7a55879d-4f1d-49db-98c2-c687b0213c3c"></td>
-    </tr>
-    <tr>
-      <td align="center">Off</td>
-      <td align="center">Anisotropic 16x</td>
-    </tr>
-  </table>
-</div>
-
-- **Shadow Resolution** - Raises the shadow resolution from the Xbox's 512x512 (default) up to 8192x8192.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/abda5e45-ce01-4f3b-a5ca-2e71de8d0c26"></td>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/95d964c2-2f57-4e3e-aaf6-b652a70db091"></td>
-    </tr>
-    <tr>
-      <td align="center">512x512</td>
-      <td align="center">8192x8192</td>
-    </tr>
-  </table>
-</div>
-
-- **Shadow Distance** - Increases the distance at which lights and their shadows turn off by up to 8x.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/2afe8ca6-e7f7-4279-950f-c41f3de23113"></td>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/71d0f145-272b-4244-9af9-1e290466c669"></td>
-    </tr>
-    <tr>
-      <td align="center">Shadow Distance 1x</td>
-      <td align="center">Shadow Distance 8x</td>
-    </tr>
-  </table>
-</div>
-
-- **Shadow Filter** - Choose between SM1.1, the Xbox shadow filter (default), and SM3 Soft, the Chaos Theory PC Shader Model 3 soft shadow filter.
-- **Ambient Occlusion** - Adds screen space ambient occlusion, creating soft contact shadows where surfaces meet. Choose between SSAO and GTAO.
-### Shader Model 3
-- **Shader Model** - Choose between Shader Model 1.1, the Xbox look, and Shader Model 3.0, which enables the Chaos Theory PC style features.
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/52b7ed68-cb87-466e-847b-8364589a6d8b"></td>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/d82cc615-ea9a-4621-991c-663e7d3bd242"></td>
-    </tr>
-    <tr>
-      <td align="center">Off</td>
-      <td align="center">On</td>
-    </tr>
-  </table>
-</div>
-
-- **HDR Rendering** - Enables Shader Model 3 HDR rendering.
-- **Tone Mapping** - Enables Shader Model 3 tone mapping.
-
-### Textures
-- **Texture Replacement** - Replaces the game's textures with the `.dds` or `.png` images in the `textures\replacement` folder beside the exe.
-- **Texture Dumping** - Saves every texture the game uses into the `textures\dumps` folder beside the exe as you play.
-- **Dump Format** - Choose between PNG or DDS, which keeps the original compression and mipmaps.
-
-### Input
-- **Mouse and Keyboard** - Full keyboard and mouse support with raw input, adjustable horizontal and vertical sensitivity, inverted look and rebindable controls.
-- **Controller** - Controller with SDL3 support, buttons can be rebound from the Controller page. Defaults match the Xbox layout.
-
-<div align="center">
-  <table>
-    <tr>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/baec07ee-feb3-4748-a121-d1a5bf44e8d3"></td>
-      <td width="50%"><img width="512" src="https://github.com/user-attachments/assets/3b344418-9592-4e8d-b165-f64bdee8c311"></td>
-    </tr>
-    <tr>
-      <td align="center">Mouse and Keyboard</td>
-      <td align="center">Controller</td>
-    </tr>
-  </table>
-</div>
-
-### General
-- **Skip Intro** - Skips the intro logos.
-- **Pause On Focus Loss** - Pauses the game and its sound while the window is in the background or minimized.
-- **Co-op Support** - Co-op can be played online by directly connecting to a friend's IP address, over LAN, or in split-screen.
-- **Co-op Tick Rate** - Raises the co-op update rate, which is capped at 22 Hz in the original game, up to 142 Hz. Both players must use the same value.
-- **Co-op Min Input Delay** - Lowers the minimum input delay in co-op from the original 50 ms down to 0 ms. Both players must use the same value.
-
-### Miscellaneous
-- **Boot Splash** - Place a `SplinterCell4Logo.png` (or `.bmp`) beside the exe to display a splash screen at launch.
-- **Custom Menu Cursor** - Place a `cursor.png` (or `cursor.dds`) beside the exe to replace the Windows arrow in the game's menus.
-
-## Playing Online
-Co-op and Versus can be played online by connecting directly to the host's IP address. No third-party programs are needed.
-- Press F10 by default to open the Settings overlay.
-- Enter the host's IP address in **Coop Join IP** for Co-op or **Versus Join IP** for Versus.
-- From the Co-op or Versus menu, select LAN and join the host's session from the list.
-
-### Hosting a Game Session
-As the host, you must port forward the following ports on your router so other players can connect to you:
-
-| Protocol | Port |
-|----------|------|
-| UDP      | 9100 |
-| UDP      | 1000 |
-| UDP      | 1010 |
-
-> [!TIP]
-> If you're unable to port forward, such as when your connection is behind CGNAT, or would like to keep your IP address private, you can use a virtual LAN service to play together instead.
-
-## System Requirements
-### Minimum
-- **OS**
-  - Windows 10 64-bit
-- **CPU** with 2 cores and support for SSE4.2 and POPCNT
-  - Intel Nehalem (Intel Core 1st Generation)
-  - AMD Bulldozer (AMD FX series)
-- **GPU** with support for Direct3D 12
-  - NVIDIA GeForce GT 630 (Kepler)
-  - AMD Radeon HD 7750
-  - Intel HD Graphics 510 (Skylake)
-- **Memory**
-  - 4 GB
-- **Storage**
-  - 6 GB for the game files, the compiled game code, saves and shader cache
-
-## Building
-### 1. Clone the Repository
-Clone this repository using [Git](https://git-scm.com/).
-```
-git clone https://github.com/TGP482/SCDA-XBERecomp.git
+```text
+Android/data/io.github.mogeldev.scda/files/
+├── libscda_code.so
+└── assets/
+    ├── default.xbe
+    ├── Default/
+    └── Media/
 ```
 
-### 2. Add the Required Game Files
-Place your extracted game data files in the `assets` folder. `default.xbe` and `sc4_adv.xbe` must be there, with the `Default`, `Media` and `adv` folders beside them.
+Use a PC over USB or ADB if Android's file manager restricts access to `Android/data`. For example, from a folder containing the generated library and your `assets/` directory:
 
-> [!NOTE]
-> Building does not support the ISO format, so the files must be extracted. ISOs only work for playing.
+```bat
+adb install -r scda-debug.apk
+adb shell am force-stop io.github.mogeldev.scda
+adb push libscda_code.so /sdcard/Android/data/io.github.mogeldev.scda/files/
+adb push assets/. /sdcard/Android/data/io.github.mogeldev.scda/files/assets/
+```
 
-### 3. Install Dependencies
-Install [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/) and select the following **Workloads** and **Individual components**:
-- Desktop development with C++
-- C++ Clang tools for Windows
-- C++ CMake tools for Windows
+Do **not** copy the builder's `compiler/libscda_host.so` to the phone. It is only a link stub; the real host library is supplied by the APK.
 
-> [!TIP]
-> `build.bat` offers to install the Clang and CMake components for you if they're missing.
+### 3. Play
 
-### 4. Build the Project
-- Run `build.bat`. The first build recompiles the entire game and can take 30 to 90 minutes on weaker systems.
-- When it finishes, run `out\build\release\SCDA.exe`.
+Connect your controller and launch SCDA. Open **Options > Recomp Settings** or **Options > Controller** to adjust settings. Settings are saved to `files/scda.toml`; saves and shader caches also stay in the app's files directory.
+
+Start with the default **50% render resolution**. Higher resolutions can substantially reduce performance on phone GPUs.
+
+## Android features and scope
+
+- **Display:** render resolution, field of view, brightness, contrast, frame-rate cap, FPS counter and FMV scaling.
+- **Graphics:** Vulkan renderer, anisotropic filtering, shadow resolution and shadow distance, retaining the Xbox Shader Model 1.1 look.
+- **Controller:** button rebinding, sensitivity, inversion, deadzone, rumble and gyro settings. Gyro availability depends on the controller.
+- **General:** skip intros, language selection, automatic/mono/stereo audio output and background pausing.
+- **Campaign only:** no co-op, versus, online/LAN play or voice support.
+
+Desktop-only features are not supported: the F10 overlay, window/monitor selection, mouse/keyboard input, Shader Model 3, HDR, ambient occlusion, SMAA/MSAA, texture dumping/replacement, custom cursor and boot splash.
+
+## Building locally
+
+Clone this fork:
+
+```bat
+git clone https://github.com/mogeldev/SCDA-XBERecomp-android.git
+cd SCDA-XBERecomp-android
+```
+
+### Generate the game headers and code
+
+Place your extracted game files in the repository's `assets/` folder. Build the Windows recompiler using the [maintainer instructions](tools/android-builder/README.md#maintainers), then run:
+
+```bat
+out\android-recompiler\compiler\xbe_recomp.exe config\scda_v2.toml
+```
+
+This generates `generated/game/`, which the Android host build currently requires. `sc4_adv.xbe` and the versus assets are not needed for Android.
+
+### Build the APK
+
+Install a compatible JDK and Android SDK, and set `ANDROID_HOME` to the SDK directory. The project uses:
+
+- Android platform 36
+- NDK `29.0.14206865`
+- CMake `3.31.6`
+- The included Gradle wrapper (JDK 21 has been tested)
+
+From the repository root, build an ARM64 debug APK **without game code embedded**:
+
+```bat
+android\gradlew.bat -p android assembleDebug -Pabi=arm64-v8a
+```
+
+Output: `android/build/outputs/apk/debug/scda-debug.apk`. Supply `libscda_code.so` separately using the player builder.
+
+For local development only, add `-PdevCode` to compile and embed the generated game code in the APK. **Do not distribute an APK built with `-PdevCode`.** Android x86_64 emulator builds are available with `-Pabi=x86_64`; this is a development target, not PC gameplay support.
+
+For local builder packaging and smoke tests, see [tools/android-builder/README.md](tools/android-builder/README.md#maintainers). No CI workflow is required.
+
+## Credits and license
+
+Based on [SCDA-XBERecomp](https://github.com/TGP482/SCDA-XBERecomp) and [Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp) by TGP482. This Android fork builds on their static recompilation and game-specific work.
+
+Project code is distributed under the [MIT license](LICENSE). Third-party components retain their own licenses. Never distribute the game's assets, XBE, generated sources, objects or `libscda_code.so`.

@@ -1,6 +1,6 @@
 # SCDA Android port: notes
 
-State as of 2026-11-05. Branch `android-port`; latest work: controller settings and live render options.
+State as of 2026-11-05. Branch `android-port`; latest work: controller settings and live render options, built and user-verified on Adreno 710.
 
 ## Scope
 
@@ -9,8 +9,8 @@ State as of 2026-11-05. Branch `android-port`; latest work: controller settings 
 - Controller only. No touch, mouse or keyboard.
 - Shader Model 1.1 Xbox look only. No SM3, HDR, AO, SMAA or MSAA.
 - Must run on Snapdragon/Adreno and Mali. Mali has no BC textures, so they are decoded on the CPU.
-- The game code is recompiled on the player's Windows PC into `libscda_code.so`, then copied with the game files into the app folder over USB.
-- Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor.
+- The game code is recompiled on the player's Windows PC into `libscda_code.so`, then copied with the game files into the app folder over USB. `tools/android-builder/` provides the self-contained Windows builder package.
+- Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor, GitHub Actions release packaging. Build and package locally.
 - minSdk 30.
 
 ## Phases
@@ -19,19 +19,16 @@ State as of 2026-11-05. Branch `android-port`; latest work: controller settings 
 |---|---|
 | 0 Setup | done |
 | 1 Platform layer | done |
-| 2 Game code as ELF .so | done; Windows player builder still to do |
+| 2 Game code as ELF .so | done; Windows Android-ARM64 player builder implemented and tested |
 | 3 Vulkan backend | first version done |
 | 4 ARM64 phone | runs on Adreno 710 at 60 fps; Mali untested |
-| 5 Release | APK and builder zip via GitHub Actions, to do |
+| 5 Release | Local builds/packaging only; GitHub Actions not required |
 
 Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunch, 8344e24 pad bridge, 405cc4e Vulkan renderer, c38a742 runs on the phone, 94f4cfc late readbacks / border colours / unfiltered depth, 9a7852e 50% render default and -O2 host.
 
 ## Next session, in this order
 
-1. Restore the Android SDK path, build an APK and verify the on-phone settings on a device (see below).
-2. Test on a Mali device, if one can be found. This also tests the CPU BC decode path.
-3. The Windows player builder for the arm64 `libscda_code.so`. It must pass `-mno-outline-atomics`.
-4. Release APK via GitHub Actions. The CI build needs generated headers without the xbe.
+1. Test on a Mali device, if one can be found. This also tests the CPU BC decode path.
 
 ## Architecture
 
@@ -62,7 +59,7 @@ Open points:
 - One vkAllocateMemory per image (risk of hitting the allocation count limit).
 - Point size for points is not written.
 
-## On-phone settings (implemented, not device-verified)
+## On-phone settings (user-verified on Adreno 710)
 
 - Use the game's **Options > Recomp Settings** and **Options > Controller** pages, with the controller. The existing
   game-menu hook supplies these pages; Android no longer lists Mouse and Keyboard.
@@ -74,11 +71,11 @@ Open points:
 - Vulkan applies render-scale and shadow-resolution changes between frames and retires old target/readback
   resources behind frame fences. Creating the window/swapchain invalidates the cached output dimensions, so an
   early 1920x1080 stand-in does not remain the aspect/render-scale basis.
-- Validation: Windows release build and Android-conditional syntax checks of the two menu files pass. The Android
-  host/Vulkan changes have not been NDK-compiled or device-tested: the configured SDK path
-  `C:\Users\admin\AppData\Local\Android\Sdk` is missing in this session.
-- Device checklist: navigate all sections with A/B/D-pad; change 50% to 40% and back without restarting; change
-  shadow resolution; check the FPS counter, brightness, controller rebind/defaults and persistence after relaunch.
+- Validation: Windows release build and Android-conditional syntax checks of the two menu files pass. ARM64 debug
+  APK built with NDK 29 and JDK 21, installed without clearing app data, and launched on Adreno 710. Startup logs
+  show Vulkan rendering and the 8BitDo controller detected; no crash observed during startup.
+- User confirmed the device checklist passes: controller navigation, live render scale 50% to 40% and back,
+  shadow resolution, FPS counter, brightness/contrast, controller rebind/defaults and persistence after relaunch.
 
 ## Test devices
 
@@ -93,6 +90,11 @@ Open points:
 
 ## Dev workflow
 
+- Windows builder: `tools/android-builder/package.ps1` creates `out/SCDA-Android-ARM64-Builder.zip`; it contains no game assets or generated code. The extracted builder accepts the matching `default.xbe`, uses NDK Clang with `-mno-outline-atomics`, resumes object compilation with Ninja, and emits a 16-KB-aligned ARM64 ELF `libscda_code.so`.
+- Validation: `tools/android-builder/test.ps1` passed package-content, XBE rejection, full build, exports, host dependency, inline-atomic, no-op rebuild and resume checks. The generated library was copied to the Adreno 710 phone and loaded successfully by the APK.
+- SDK in this environment: `C:\Users\admin\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Android\Sdk`.
+  Set both `ANDROID_HOME` and `ANDROID_SDK_ROOT` to this path for builds; the old
+  `C:\Users\admin\AppData\Local\Android\Sdk` path is absent. No global environment changes were made.
 - Direct build: `cmake -S . -B out/android-x86_64` with the NDK toolchain, `-DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared -DSCDA_DEV_CODE=ON`, then ninja.
 - APK (from the repo root): `android/gradlew.bat -p android assembleDebug -PdevCode -Pabi=x86_64` (or `-Pabi=arm64-v8a` for the phone). Output: `android/build/outputs/apk/debug/scda-debug.apk`.
 - Game files go to `/sdcard/Android/data/io.github.mogeldev.scda/files/assets`.
