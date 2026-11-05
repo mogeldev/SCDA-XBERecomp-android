@@ -27,3 +27,8 @@ scda.toml
 
 # Local temporary folder
 .local
+# android
+/android/.gradle/
+/android/.cxx/
+/android/build/
+/android/local.properties
