@@ -1,8 +1,9 @@
 # Splinter Cell: Double Agent (original Xbox), statically recompiled
 
 cmake_minimum_required(VERSION 3.25)
-# ANDROID comes from the toolchain, which project() loads
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+# ANDROID comes from the toolchain, which project() loads; Gradle and a direct NDK configure both pass the ABI
+if(DEFINED ANDROID_ABI)
+
     project(scda LANGUAGES C CXX)
 else()
     project(scda LANGUAGES C CXX RC)
@@ -41,11 +42,52 @@ set(OPUS_STACK_PROTECTOR OFF CACHE BOOL "" FORCE)
 set(OPUS_FORTIFY_SOURCE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(opus GIT_REPOSITORY https://github.com/xiph/opus.git GIT_TAG v1.5.2 GIT_SHALLOW TRUE)
 
-# Android (android/ builds this through Gradle): libmain.so, which SDLActivity loads after libSDL3.so
+# Android (android/ builds this through Gradle), the story image alone. SDLActivity loads libSDL3.so and libmain.so,
+# which loads the game code .so; that needs libscda_host.so, the host and the game hooks. The host is linked -z global,
+# so the dynamic linker takes its overrides over the code's weak names (cpu/x86_ops.h), and it leaves the code's
+# symbols undefined: the code .so is built from the player's xbe and brings the host in.
 if(ANDROID)
-    FetchContent_MakeAvailable(SDL3)
+    # dxgiformat.h alone: DXGI_FORMAT names the vertex and texture formats
+    FetchContent_Declare(directx_headers GIT_REPOSITORY https://github.com/microsoft/DirectX-Headers.git
+        GIT_TAG v1.620.1 GIT_SHALLOW TRUE SOURCE_SUBDIR none)
+    FetchContent_MakeAvailable(tomlplusplus imgui SDL3 opus directx_headers)
+    set(GEN ${CMAKE_CURRENT_SOURCE_DIR}/generated/game)
+
+    file(GLOB ANDROID_SOURCES CONFIGURE_DEPENDS src/*/*.cpp)
+    list(FILTER ANDROID_SOURCES EXCLUDE REGEX "/src/versus/|/src/android/main\\.cpp")
+    # Windows' own, src/android has what stands in for them
+    list(FILTER ANDROID_SOURCES EXCLUDE REGEX
+        "/src/app/(main|splash|cursor|handover|game_code|system_info|focus_pause)\\.cpp|/src/audio/xaudio2\\.cpp")
+    list(FILTER ANDROID_SOURCES EXCLUDE REGEX "/src/gpu/(d3d12|pipeline_cache|texturedumper)\\.cpp")
+    set(xbe_file ${CMAKE_CURRENT_SOURCE_DIR}/assets/default.xbe)
+    file(SHA1 ${xbe_file} xbe_sha1)
+    set(XBE_HASH ${CMAKE_CURRENT_BINARY_DIR}/scda_xbe.cpp)
+    file(CONFIGURE OUTPUT ${XBE_HASH} CONTENT "extern const char kImageSha1[] = \"${xbe_sha1}\";\n")
+    add_library(scda_host SHARED ${ANDROID_SOURCES} ${XBE_HASH} ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp ${imgui_SOURCE_DIR}/imgui_widgets.cpp)
+    target_include_directories(scda_host PRIVATE src ${GEN} ${opus_SOURCE_DIR}/include)
+    target_include_directories(scda_host SYSTEM PRIVATE ${imgui_SOURCE_DIR} ${directx_headers_SOURCE_DIR}/include/directx)
+    target_compile_options(scda_host PRIVATE -fno-strict-aliasing)
+    target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus vulkan log)
+    target_link_options(scda_host PRIVATE -Wl,-z,global -Wl,-z,undefs)
+
     add_library(main SHARED src/android/main.cpp)
-    target_link_libraries(main PRIVATE SDL3::SDL3 vulkan log)
+    target_link_libraries(main PRIVATE SDL3::SDL3 log)
+
+    # Development only, a release must not carry it: the game code from generated/ in the APK
+    option(SCDA_DEV_CODE "Build the game code from generated/game into the APK" OFF)
+    if(SCDA_DEV_CODE)
+        file(GLOB CODE_SOURCES ${GEN}/x86_func_mapping.cpp ${GEN}/x86_recomp.*.cpp)
+        add_library(scda_code SHARED ${CODE_SOURCES})
+        target_include_directories(scda_code PRIVATE src ${GEN})
+        target_include_directories(scda_code SYSTEM PRIVATE src/cpu/freestanding)
+        target_compile_definitions(scda_code PRIVATE X86_GAME_CODE)
+        target_compile_options(scda_code PRIVATE -O2 -fno-strict-aliasing -nostdinc -nostdinc++ -w)
+        target_link_libraries(scda_code PRIVATE scda_host)
+        # the C and C++ runtimes come with the host, as for the player's build
+        target_link_options(scda_code PRIVATE -nostdlib -Wl,-z,undefs)
+
+    endif()
     return()
 endif()
 

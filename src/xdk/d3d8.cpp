@@ -1,5 +1,6 @@
 // Direct3D 8 (XDK 5849) entry points the title calls, implemented on the host renderer.
 // Resource creation, locking and the XG helpers stay recompiled: they only manage memory.
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -7,6 +8,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
+
 
 #include <algorithm>
 #include <atomic>
@@ -236,11 +239,14 @@ HLE_STDCALL(Direct3D_CreateDevice, 6) {
         g_backend = gpu::CreateBackend();
         if (!g_backend->Init(w, h)) {
             LOGE("d3d: renderer init failed");
+#ifdef _WIN32
             // no owner window, as this runs on the title's thread and the window may already be fullscreen over the box
             MessageBoxW(nullptr,
                         L"Direct3D 12 could not be started. Make sure your graphics card supports it and its driver "
                         L"is up to date.",
                         L"Splinter Cell: Double Agent", MB_ICONERROR | MB_TOPMOST);
+#endif
+
             Shutdown(1);
         }
         g_backend = gpu::CreateThreadedBackend(std::move(g_backend));

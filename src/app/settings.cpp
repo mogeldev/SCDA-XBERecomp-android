@@ -1,11 +1,17 @@
 // scda.toml beside the exe
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
+
 #define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <SDL3/SDL_locale.h>
+#include <SDL3/SDL_video.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -49,6 +55,7 @@ std::filesystem::path File() { return ExeDir() / "scda.toml"; }
 
 // the Windows display language when the game has it, else English
 std::string SystemLanguage() {
+#ifdef _WIN32
     switch (PRIMARYLANGID(GetUserDefaultUILanguage())) {
         case LANG_FRENCH: return "fra";
         case LANG_GERMAN: return "deu";
@@ -56,6 +63,17 @@ std::string SystemLanguage() {
         case LANG_SPANISH: return "esp";
         default: return "int";
     }
+#else
+    int count = 0;
+    SDL_Locale** locales = SDL_GetPreferredLocales(&count);
+    std::string language = count ? locales[0]->language : "";
+    SDL_free(locales);
+    if (language == "fr") return "fra";
+    if (language == "de") return "deu";
+    if (language == "it") return "ita";
+    if (language == "es") return "esp";
+    return "int";
+#endif
 }
 
 void LoadGyro(const toml::table& t, gyro::Settings& g) {
@@ -266,6 +284,7 @@ const std::string& BootLanguage() {
     return language;
 }
 
+#ifdef _WIN32
 Mode Desktop() {
     HMONITOR mon = MonitorFromWindow(static_cast<HWND>(Window()), MONITOR_DEFAULTTOPRIMARY);
     MONITORINFOEXW mi{};
@@ -312,6 +331,18 @@ void* MonitorHandle(const std::string& device) {
     if (!device.empty()) EnumDisplayMonitors(nullptr, nullptr, match, LPARAM(&find));
     return find.found ? find.found : MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
 }
+#else
+// the screen the window fills, landscape; a full HD stand-in before the window is up
+Mode Desktop() {
+    int w = 0, h = 0;
+    if (!Window() || !SDL_GetWindowSizeInPixels(static_cast<SDL_Window*>(Window()), &w, &h) || !w || !h) return {1920, 1080};
+    return {uint32_t(std::max(w, h)), uint32_t(std::min(w, h))};
+}
+
+std::vector<Display> Displays() { return {{"", 1, Desktop(), true}}; }
+void* MonitorHandle(const std::string&) { return nullptr; }
+#endif
+
 
 Mode Output() {
     const Settings& s = Get();

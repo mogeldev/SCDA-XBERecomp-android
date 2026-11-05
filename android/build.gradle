@@ -12,8 +12,15 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = '0.1'
-        // x86_64 for the emulator
-        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        // x86_64 for the emulator; -Pabi=x86_64 builds one
+        ndk { abiFilters(*(project.findProperty('abi')?.split(',') ?: ['arm64-v8a', 'x86_64'])) }
+        externalNativeBuild {
+            cmake {
+                // the shared C++ runtime: exceptions cross from the host into the game code
+                // -PdevCode carries the game code from generated/ in the APK, for development only
+                arguments '-DANDROID_STL=c++_shared', "-DSCDA_DEV_CODE=${project.hasProperty('devCode') ? 'ON' : 'OFF'}"
+            }
+        }
     }
     externalNativeBuild {
         cmake {

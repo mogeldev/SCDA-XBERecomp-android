@@ -1,5 +1,6 @@
 // The game in assets: its files, or a disc image (.iso) with this executable's xbe on it. The xbe must be the one
 // this executable was recompiled from; another release's would run its own data under this code.
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -7,6 +8,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <SDL3/SDL_messagebox.h>
+#endif
+
 
 #include <algorithm>
 #include <cwctype>
@@ -113,12 +118,20 @@ bool FindGame(GameFiles& game) {
     }
 
     if (other_name.empty()) {
+#ifdef _WIN32
         MessageBoxW(nullptr,
                     L"Put the game in the assets folder: its disc image (.iso), or the disc's files (default.xbe and "
                     L"sc4_adv.xbe with the Default, Media and adv folders beside them).",
                     kTitle, MB_ICONERROR);
+#else
+        std::string text = "Copy the game into " + (ExeDir() / "assets").string() +
+                           ": its disc image (.iso), or the disc's files (default.xbe with the Default and Media folders "
+                           "beside it).";
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Splinter Cell: Double Agent", text.c_str(), nullptr);
+#endif
         return false;
     }
+
     // only one release is known in NA/EU, so a mismatch is almost always a harmless dump difference
     LOGW("Game: %s in %s is not the release this build was made from (expected sha1 %s), starting it anyway", IMAGE_XBE,
          other_name.string().c_str(), kImageSha1);

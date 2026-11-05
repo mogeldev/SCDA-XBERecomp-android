@@ -2,14 +2,22 @@
 // takes at call time (state changes, resource headers, indices, rects) and goes on; vertex, texture and surface memory
 // are read when the draw runs, as the console's GPU reads them after the call returns. The XDK's fences, busy checks
 // and locks wait for that.
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
+
 #define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <pthread.h>
+#endif
+#ifdef __SSE4_1__
 #include <smmintrin.h>
+#endif
+
 
 #include <algorithm>
 #include <chrono>
@@ -88,6 +96,9 @@ std::vector<Range> StateRanges() {
 
 // equal bytes, 16 at a time: most of the state is compared on every draw
 bool Same(const uint8_t* a, const uint8_t* b, size_t n) {
+#ifndef __SSE4_1__
+    return !std::memcmp(a, b, n);
+#else
     size_t i = 0;
     __m128i diff = _mm_setzero_si128();
     for (; i + 16 <= n; i += 16)
@@ -95,6 +106,7 @@ bool Same(const uint8_t* a, const uint8_t* b, size_t n) {
                                                 _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i))));
     if (!_mm_testz_si128(diff, diff)) return false;
     return i == n || !std::memcmp(a + i, b + i, n - i);
+#endif
 }
 
 using Clock = std::chrono::steady_clock;
@@ -392,10 +404,15 @@ private:
     }
 
     void Run() {
+#ifdef _WIN32
         using SetDescription = HRESULT(WINAPI*)(HANDLE, PCWSTR);
         if (auto set = reinterpret_cast<SetDescription>(
                 reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription"))))
             set(GetCurrentThread(), L"render");
+#else
+        pthread_setname_np(pthread_self(), "render");
+#endif
+
         for (;;) {
             Batch* b;
             {
