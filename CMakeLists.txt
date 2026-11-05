@@ -1,7 +1,12 @@
 # Splinter Cell: Double Agent (original Xbox), statically recompiled
 
 cmake_minimum_required(VERSION 3.25)
-project(scda LANGUAGES C CXX RC)
+# ANDROID comes from the toolchain, which project() loads
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    project(scda LANGUAGES C CXX)
+else()
+    project(scda LANGUAGES C CXX RC)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,9 +18,15 @@ set(ZYDIS_BUILD_DOXYGEN OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(zydis GIT_REPOSITORY https://github.com/zyantific/zydis.git GIT_TAG v4.1.1 GIT_SHALLOW TRUE)
 FetchContent_Declare(tomlplusplus GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git GIT_TAG v3.4.0 GIT_SHALLOW TRUE)
 FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.0 GIT_SHALLOW TRUE)
-# SDL3 for controllers and the headset's audio, static so it links into the exe
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
+# SDL3 for controllers and the headset's audio, static so it links into the exe; on Android the shared
+# libSDL3.so that SDLActivity loads
+if(ANDROID)
+    set(SDL_SHARED ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
@@ -29,6 +40,15 @@ set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 set(OPUS_STACK_PROTECTOR OFF CACHE BOOL "" FORCE)
 set(OPUS_FORTIFY_SOURCE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(opus GIT_REPOSITORY https://github.com/xiph/opus.git GIT_TAG v1.5.2 GIT_SHALLOW TRUE)
+
+# Android (android/ builds this through Gradle): libmain.so, which SDLActivity loads after libSDL3.so
+if(ANDROID)
+    FetchContent_MakeAvailable(SDL3)
+    add_library(main SHARED src/android/main.cpp)
+    target_link_libraries(main PRIVATE SDL3::SDL3 vulkan log)
+    return()
+endif()
+
 FetchContent_MakeAvailable(zydis tomlplusplus imgui SDL3 opus)
 
 file(GLOB RECOMP_CONFIGS CONFIGURE_DEPENDS config/*.toml)
@@ -66,7 +86,7 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp)
 
 file(GLOB HOST_SOURCES CONFIGURE_DEPENDS src/*/*.cpp)
-list(FILTER HOST_SOURCES EXCLUDE REGEX "/src/(game|versus)/")
+list(FILTER HOST_SOURCES EXCLUDE REGEX "/src/(game|versus|android)/")
 # SDL's and Opus's headers go to the input, gyro and voice code alone (both are linked LINK_ONLY)
 set_source_files_properties(src/core/input.cpp src/core/gyro.cpp src/audio/voice.cpp src/audio/voice_link.cpp
     PROPERTIES
