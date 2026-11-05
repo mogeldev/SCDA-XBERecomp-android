@@ -53,11 +53,15 @@ Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunc
 - Depth textures sample nearest where the depth format can't filter linearly.
 - BC textures are decoded on the CPU where the GPU lacks BC.
 
-Open points:
-- WaitGpuFrame is a no-op.
+Renderer follow-up completed:
+- WaitGpuFrame now waits on the submission fence recorded for the requested present; fence access is serialized against frame-slot reuse.
+- Optimal-tiled images now share 32-MiB Vulkan allocations with alignment-aware free-range reuse; dedicated-required and large images use separate allocations. A whole-block device-memory failure retries with the exact image size. Freed ranges are reused only after the existing deferred image-destruction fence completes.
+- Vulkan vertex shaders now write the PointSize built-in using programmable `oPts`, fixed-function vertex register 6, or point-size render state, clamped to device limits. Devices without `largePoints` get a constant 1.0. Shared D3D shader generation is unchanged; modified shader text gives new SPIR-V cache keys.
+- Host tests cover allocation/fence bookkeeping and compile generated point shaders to SPIR-V; APK rebuild passed. User confirmed the updated APK runs the game successfully on the Adreno 710 phone. Mali gameplay and specific point-effect/background-resume validation remain.
+
+Remaining limitations:
 - Colour-blind modes and the ImGui overlay are left out.
-- One vkAllocateMemory per image (risk of hitting the allocation count limit).
-- Point size for points is not written.
+- Point-sprite texture coordinates and fixed-function distance attenuation are not implemented by this point-size fix.
 
 ## On-phone settings (user-verified on Adreno 710)
 
@@ -92,7 +96,7 @@ Open points:
 
 - ZIP importer tests: see `android/tests/README.md`. 128 synthetic checks plus extraction/validation of the real campaign ZIP passed. ZIP packaging tests pass; ARM64 APK built without embedded game code and existing Adreno install launched successfully. User confirmed the fresh-install game ZIP import works on Adreno 710. Import uses a staging directory, lock, free-space/size limits and cancellation; never overwrites an existing `game/` folder, saves or settings.
 - Windows GUI builder: `tools/android-builder/package.ps1` creates `out/SCDA-Android-ARM64-Builder.zip`, containing a small WPF GUI EXE plus companion compiler tools, scripts and licenses. It contains no game assets or generated code. `Builder.cs` uses code-only WPF (no WinForms reference), WPF file dialogs and the native Windows shell folder picker. Build work runs off the UI thread; a throttled bounded log queue/timer keeps the window responsive during verbose compiler output, while the full timestamped log is saved to `build.log`. It lets players select an original Xbox ISO or extracted game folder and an output ZIP, reusing `build.ps1`/`package-game.ps1`. ISO extraction uses bundled extract-xiso (XboxDev), pinned to `3f5b62cfe68f000b0e3c8a30104973f3a297948e`, built with the static Windows runtime; its license is included. This product includes software developed by in <in@fishtank.com>. The source ISO is read-only and temporary extracted files are cleaned up after success/failure. Resumable builds stay in the extracted builder's `work/` directory; no embedded payload, CLI or external runtime installation is required for players. The GUI accepts the matching `default.xbe`, uses NDK Clang with `-mno-outline-atomics`, resumes object compilation with Ninja, and emits the import ZIP with 16-KB-aligned ARM64 `libscda_code.so`.
-- Validation: `tools/android-builder/test.ps1` passed WPF window/control and no-WinForms-reference, small EXE/companion tool, and `test-gui.ps1` passed a 24,000-line output flood with a 46 ms maximum UI heartbeat gap. The visible log is bounded and full output is saved to `build.log`. Folder and generated-XISO build-to-ZIP, ISO immutability/cleanup/rejection, path validation, XBE rejection, full build, export, host dependency, inline-atomic, no-op rebuild and resume checks also passed. A stable hash-validated `work/default.xbe` preserves Ninja state across temporary ISO extraction paths. The desktop USA retail ISO also passed the complete extraction → matching-XBE validation → ARM64 build → campaign ZIP pipeline with Windows-only PATH: 1,318 ZIP entries, approximately 3.1 GiB compressed. Source ISO SHA-256 was unchanged and temporary extraction was cleaned up. This test used the builder backend; the resulting ZIP has not been imported on the phone. The generated library was copied to the Adreno 710 phone and loaded successfully by the APK.
+- Validation: `tools/android-builder/test.ps1` passed WPF window/control and no-WinForms-reference, small EXE/companion tool, and `test-gui.ps1` passed a 24,000-line output flood with a 46 ms maximum UI heartbeat gap. The visible log is bounded and full output is saved to `build.log`. Folder and generated-XISO build-to-ZIP, ISO immutability/cleanup/rejection, path validation, XBE rejection, full build, export, host dependency, inline-atomic, no-op rebuild and resume checks also passed. A stable hash-validated `work/default.xbe` preserves Ninja state across temporary ISO extraction paths. The desktop USA retail ISO also passed the complete extraction → matching-XBE validation → ARM64 build → campaign ZIP pipeline with Windows-only PATH: 1,318 ZIP entries, approximately 3.1 GiB compressed. Source ISO SHA-256 was unchanged and temporary extraction was cleaned up. User confirmed the resulting retail-ISO-generated ZIP imports and works on the Adreno 710 phone. The generated library was also previously loaded successfully by the APK.
 - SDK in this environment: `C:\Users\admin\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Android\Sdk`.
   Set both `ANDROID_HOME` and `ANDROID_SDK_ROOT` to this path for builds; the old
   `C:\Users\admin\AppData\Local\Android\Sdk` path is absent. No global environment changes were made.
@@ -101,7 +105,7 @@ Open points:
 - New installs use the first-boot ZIP importer; imported files go to `/sdcard/Android/data/io.github.mogeldev.scda/files/game/`. Existing direct installs under `files/assets` remain supported.
 - Controller in the emulator: `python tools/padbridge/padbridge.py` turns an XInput pad on the PC into a uinput Xbox 360 pad (needs adb root). The pad shows up in the game about 9 s after the uinput device appears.
 - Logs: `adb logcat -s scda:*`. The file log is in `files/logs`.
-- Windows check: repository `build.bat` with CI=1 and the SDK's cmake 3.31.6 on PATH; builder smoke test via `tools/android-builder/test.ps1`.
+- Windows builder checks: build the recompiler using `tools/android-builder/README.md#maintainers`, then run `tools/android-builder/test.ps1`. The legacy PC gameplay build/release scripts and Windows gameplay CMake presets have been removed.
 
 Toolchain: Android SDK (NDK 29.0.14206865, cmake 3.31.6, emulator, platform 36), LLVM 23.1.5, JDK 25, Gradle 9.8.2, AGP 9.4.1.
 
