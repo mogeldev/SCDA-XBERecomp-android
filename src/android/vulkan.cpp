@@ -708,7 +708,11 @@ private:
     void Submit(VkSemaphore wait, VkSemaphore signal);
     // passes
     void BeginRendering(Target* rt, Target* ds);
-    void BeginRenderingView(VkImageView view, VkImageLayout layout, uint32_t w, uint32_t h, bool clear);
+    void BeginRenderingView(VkImageView view, VkFormat fmt, VkImageLayout layout, uint32_t w, uint32_t h, bool clear);
+    VkRenderPass Pass(VkFormat color, bool depth, bool clear, VkImageLayout layout);
+    VkFramebuffer Framebuffer(VkRenderPass rp, VkImageView color, VkImageView depth, uint32_t w, uint32_t h);
+    void ForgetView(VkImageView v);
+    void BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h);
     void EndRendering();
     void GlobalBarrier();
     void SetViewport(float x, float y, float w, float h);
@@ -756,8 +760,12 @@ private:
     uint32_t family_ = 0;
     VkDevice dev_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
-    PFN_vkCmdBeginRenderingKHR begin_rendering_ = nullptr;
-    PFN_vkCmdEndRenderingKHR end_rendering_ = nullptr;
+    struct Fb {
+        VkFramebuffer fb;
+        VkImageView color, depth;
+    };
+    std::unordered_map<uint64_t, VkRenderPass> passes_;
+    std::unordered_map<uint64_t, Fb> fbs_;
     bool bc_ = false;
     bool aniso_ = false;
     bool wireframe_ = false;
@@ -895,36 +903,16 @@ bool VulkanBackend::CreateDevice() {
     vkGetPhysicalDeviceMemoryProperties(gpu_, &mem_props_);
     ubo_align_ = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
 
-    uint32_t en = 0;
-    vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, nullptr);
-    std::vector<VkExtensionProperties> exts(en);
-    vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &en, exts.data());
-    auto has = [&](const char* name) {
-        return std::any_of(exts.begin(), exts.end(), [&](const auto& e) { return !std::strcmp(e.extensionName, name); });
-    };
-    bool core13 = props_.apiVersion >= VK_API_VERSION_1_3 && instance_version_ >= VK_API_VERSION_1_3;
-    if (!core13 && !has(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)) {
-        LOGE("vulkan: %s has no dynamic rendering", props_.deviceName);
-        return false;
-    }
     std::vector<const char*> want = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    for (const char* e : {VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME,
-                          VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME}) {
-        if (!core13 && has(e)) want.push_back(e);
-    }
-
     VkPhysicalDeviceFeatures have;
     vkGetPhysicalDeviceFeatures(gpu_, &have);
     bc_ = have.textureCompressionBC;
     aniso_ = have.samplerAnisotropy;
     wireframe_ = have.fillModeNonSolid;
-    VkPhysicalDeviceDynamicRenderingFeaturesKHR dr{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
-    dr.dynamicRendering = VK_TRUE;
-    VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-    f2.pNext = &dr;
-    f2.features.textureCompressionBC = have.textureCompressionBC;
-    f2.features.samplerAnisotropy = have.samplerAnisotropy;
-    f2.features.fillModeNonSolid = have.fillModeNonSolid;
+    VkPhysicalDeviceFeatures on{};
+    on.textureCompressionBC = have.textureCompressionBC;
+    on.samplerAnisotropy = have.samplerAnisotropy;
+    on.fillModeNonSolid = have.fillModeNonSolid;
 
     float priority = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -932,25 +920,13 @@ bool VulkanBackend::CreateDevice() {
     qci.queueCount = 1;
     qci.pQueuePriorities = &priority;
     VkDeviceCreateInfo ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    ci.pNext = &f2;
+    ci.pEnabledFeatures = &on;
     ci.queueCreateInfoCount = 1;
     ci.pQueueCreateInfos = &qci;
     ci.enabledExtensionCount = uint32_t(want.size());
     ci.ppEnabledExtensionNames = want.data();
     VK_TRY(vkCreateDevice(gpu_, &ci, nullptr, &dev_));
     vkGetDeviceQueue(dev_, family_, 0, &queue_);
-    auto fn = [&](const char* core, const char* khr) {
-        PFN_vkVoidFunction f = core13 ? vkGetDeviceProcAddr(dev_, core) : nullptr;
-        return f ? f : vkGetDeviceProcAddr(dev_, khr);
-    };
-    begin_rendering_ = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(fn("vkCmdBeginRendering", "vkCmdBeginRenderingKHR"));
-    end_rendering_ = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(fn("vkCmdEndRendering", "vkCmdEndRenderingKHR"));
-    if (!begin_rendering_ || !end_rendering_) {
-        LOGE("vulkan: %s (API %u.%u) gives no vkCmdBeginRendering", props_.deviceName,
-             VK_API_VERSION_MAJOR(props_.apiVersion), VK_API_VERSION_MINOR(props_.apiVersion));
-        return false;
-    }
-
     // D24S8 where it can be drawn to and sampled, else D32S8
     auto usable = [&](VkFormat f) {
         VkFormatProperties fp;
@@ -1043,7 +1019,10 @@ bool VulkanBackend::CreateSwapchain() {
 // the old swapchain's views and semaphores; the swapchain itself unless a new one replaced it
 void VulkanBackend::DestroySwapchain() {
     vkDeviceWaitIdle(dev_);
-    for (VkImageView v : swap_views_) vkDestroyImageView(dev_, v, nullptr);
+    for (VkImageView v : swap_views_) {
+        ForgetView(v);
+        vkDestroyImageView(dev_, v, nullptr);
+    }
     for (VkSemaphore s : rendered_) vkDestroySemaphore(dev_, s, nullptr);
     swap_views_.clear();
     rendered_.clear();
@@ -1226,6 +1205,8 @@ bool VulkanBackend::CreateImage(Image& im, const ImageDesc& d) {
 }
 
 void VulkanBackend::DestroyImage(Image& im) {
+    ForgetView(im.view);
+    ForgetView(im.attach);
     if (im.view) vkDestroyImageView(dev_, im.view, nullptr);
     if (im.attach) vkDestroyImageView(dev_, im.attach, nullptr);
     if (im.image) vkDestroyImage(dev_, im.image, nullptr);
@@ -1389,32 +1370,94 @@ void VulkanBackend::GlobalBarrier() {
                          0, nullptr, 0, nullptr);
 }
 
+// render passes by attachment formats; the load op and layout make no difference to which pipelines fit them
+VkRenderPass VulkanBackend::Pass(VkFormat color, bool depth, bool clear, VkImageLayout layout) {
+    uint64_t key = uint64_t(color) | uint64_t(depth) << 32 | uint64_t(clear) << 33 | uint64_t(layout) << 34;
+    auto it = passes_.find(key);
+    if (it != passes_.end()) return it->second;
+    VkAttachmentDescription at[2] = {};
+    VkAttachmentReference cref{0, layout}, dref{0, VK_IMAGE_LAYOUT_GENERAL};
+    uint32_t n = 0;
+    if (color) {
+        at[n] = {0, color, VK_SAMPLE_COUNT_1_BIT, clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
+                 VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                 layout, layout};
+        cref.attachment = n++;
+    }
+    if (depth) {
+        at[n] = {0, depth_fmt_, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
+                 VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE, VK_IMAGE_LAYOUT_GENERAL,
+                 VK_IMAGE_LAYOUT_GENERAL};
+        dref.attachment = n++;
+    }
+    VkSubpassDescription sp{};
+    sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sp.colorAttachmentCount = color ? 1 : 0;
+    sp.pColorAttachments = color ? &cref : nullptr;
+    sp.pDepthStencilAttachment = depth ? &dref : nullptr;
+    VkRenderPassCreateInfo ci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    ci.attachmentCount = n;
+    ci.pAttachments = at;
+    ci.subpassCount = 1;
+    ci.pSubpasses = &sp;
+    VkRenderPass rp = VK_NULL_HANDLE;
+    if (vkCreateRenderPass(dev_, &ci, nullptr, &rp) != VK_SUCCESS) LOGE("vulkan: render pass creation failed");
+    return passes_[key] = rp;
+}
+
+VkFramebuffer VulkanBackend::Framebuffer(VkRenderPass rp, VkImageView color, VkImageView depth, uint32_t w,
+                                         uint32_t h) {
+    uint64_t key = Hash(&color, sizeof(color), Hash(&depth, sizeof(depth), Hash(&rp, sizeof(rp), uint64_t(w) << 32 | h)));
+    auto it = fbs_.find(key);
+    if (it != fbs_.end()) return it->second.fb;
+    VkImageView views[2];
+    uint32_t n = 0;
+    if (color) views[n++] = color;
+    if (depth) views[n++] = depth;
+    VkFramebufferCreateInfo ci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+    ci.renderPass = rp;
+    ci.attachmentCount = n;
+    ci.pAttachments = views;
+    ci.width = w;
+    ci.height = h;
+    ci.layers = 1;
+    VkFramebuffer fb = VK_NULL_HANDLE;
+    if (vkCreateFramebuffer(dev_, &ci, nullptr, &fb) != VK_SUCCESS) LOGE("vulkan: framebuffer creation failed");
+    fbs_[key] = {fb, color, depth};
+    return fb;
+}
+
+// framebuffers go with the views they hold
+void VulkanBackend::ForgetView(VkImageView v) {
+    if (!v) return;
+    for (auto it = fbs_.begin(); it != fbs_.end();) {
+        if (it->second.color == v || it->second.depth == v) {
+            vkDestroyFramebuffer(dev_, it->second.fb, nullptr);
+            it = fbs_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void VulkanBackend::BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h) {
+    VkClearValue clear{};
+    clear.color = {{0, 0, 0, 1}};
+    VkRenderPassBeginInfo bi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    bi.renderPass = rp;
+    bi.framebuffer = fb;
+    bi.renderArea.extent = {w, h};
+    bi.clearValueCount = 1;
+    bi.pClearValues = &clear;
+    vkCmdBeginRenderPass(Cur().cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
+}
+
 void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     if (active_ && !other_ && active_rt_ == rt && active_ds_ == ds) return;
     EndRendering();
-    VkRenderingAttachmentInfoKHR ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR};
-    VkRenderingAttachmentInfoKHR da{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR};
-    VkRenderingInfoKHR ri{VK_STRUCTURE_TYPE_RENDERING_INFO_KHR};
-    ri.layerCount = 1;
-    if (rt) {
-        ca.imageView = rt->im.view;
-        ca.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        ca.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        ri.colorAttachmentCount = 1;
-        ri.pColorAttachments = &ca;
-        ri.renderArea.extent = {rt->w, rt->h};
-    }
-    if (ds) {
-        da.imageView = ds->im.attach;
-        da.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        da.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        da.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        ri.pDepthAttachment = &da;
-        if (HasStencil(depth_fmt_)) ri.pStencilAttachment = &da;
-        ri.renderArea.extent = {ds->w, ds->h};
-    }
-    begin_rendering_(Cur().cmd, &ri);
+    uint32_t w = rt ? rt->w : ds->w, h = rt ? rt->h : ds->h;
+    VkRenderPass rp = Pass(rt ? kBgra : VK_FORMAT_UNDEFINED, ds != nullptr, false, VK_IMAGE_LAYOUT_GENERAL);
+    BeginPass(rp, Framebuffer(rp, rt ? rt->im.view : VK_NULL_HANDLE, ds ? ds->im.attach : VK_NULL_HANDLE, w, h), w, h);
     active_ = true;
     other_ = false;
     active_rt_ = rt;
@@ -1423,20 +1466,11 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     if (ds) ds->drawn = true;
 }
 
-void VulkanBackend::BeginRenderingView(VkImageView view, VkImageLayout layout, uint32_t w, uint32_t h, bool clear) {
+void VulkanBackend::BeginRenderingView(VkImageView view, VkFormat fmt, VkImageLayout layout, uint32_t w, uint32_t h,
+                                       bool clear) {
     EndRendering();
-    VkRenderingAttachmentInfoKHR ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR};
-    ca.imageView = view;
-    ca.imageLayout = layout;
-    ca.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-    ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    ca.clearValue.color = {{0, 0, 0, 1}};
-    VkRenderingInfoKHR ri{VK_STRUCTURE_TYPE_RENDERING_INFO_KHR};
-    ri.layerCount = 1;
-    ri.colorAttachmentCount = 1;
-    ri.pColorAttachments = &ca;
-    ri.renderArea.extent = {w, h};
-    begin_rendering_(Cur().cmd, &ri);
+    VkRenderPass rp = Pass(fmt, false, clear, layout);
+    BeginPass(rp, Framebuffer(rp, view, VK_NULL_HANDLE, w, h), w, h);
     active_ = true;
     other_ = true;
     active_rt_ = active_ds_ = nullptr;
@@ -1444,7 +1478,7 @@ void VulkanBackend::BeginRenderingView(VkImageView view, VkImageLayout layout, u
 
 void VulkanBackend::EndRendering() {
     if (!active_) return;
-    end_rendering_(Cur().cmd);
+    vkCmdEndRenderPass(Cur().cmd);
     GlobalBarrier();
     active_ = other_ = false;
     active_rt_ = active_ds_ = nullptr;
@@ -1541,7 +1575,7 @@ void VulkanBackend::UploadTarget(Target& t, const Surface& s) {
     }
     Image tmp;
     if (!CreatePixelImage(tmp, px, pitch, d.width, d.height)) return;
-    BeginRenderingView(t.im.view, VK_IMAGE_LAYOUT_GENERAL, t.w, t.h, false);
+    BeginRenderingView(t.im.view, kBgra, VK_IMAGE_LAYOUT_GENERAL, t.w, t.h, false);
     SetViewport(0, 0, float(t.w), float(t.h));
     BlitArgs b;
     b.src = tmp.view;
@@ -1993,14 +2027,8 @@ VkPipeline VulkanBackend::EnsurePipeline(const PipeKey& k, VkShaderModule vs, Vk
     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     ds.dynamicStateCount = 4;
     ds.pDynamicStates = dyn;
-    VkFormat color = VkFormat(k.rtfmt);
-    VkPipelineRenderingCreateInfoKHR ri{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-    ri.colorAttachmentCount = k.rtfmt ? 1 : 0;
-    ri.pColorAttachmentFormats = &color;
-    ri.depthAttachmentFormat = k.ds ? depth_fmt_ : VK_FORMAT_UNDEFINED;
-    ri.stencilAttachmentFormat = k.ds && HasStencil(depth_fmt_) ? depth_fmt_ : VK_FORMAT_UNDEFINED;
     VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    ci.pNext = &ri;
+    ci.renderPass = Pass(VkFormat(k.rtfmt), k.ds, false, VK_IMAGE_LAYOUT_GENERAL);
     ci.stageCount = 2;
     ci.pStages = st;
     ci.pVertexInputState = &vi;
@@ -2062,11 +2090,8 @@ VkPipeline VulkanBackend::EnsureBlitPipeline(VkFormat fmt, bool over) {
     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     ds.dynamicStateCount = 2;
     ds.pDynamicStates = dyn;
-    VkPipelineRenderingCreateInfoKHR ri{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-    ri.colorAttachmentCount = 1;
-    ri.pColorAttachmentFormats = &fmt;
     VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    ci.pNext = &ri;
+    ci.renderPass = Pass(fmt, false, false, VK_IMAGE_LAYOUT_GENERAL);
     ci.stageCount = 2;
     ci.pStages = st;
     ci.pVertexInputState = &vi;
@@ -2396,7 +2421,7 @@ void VulkanBackend::Sync(uint32_t data, uint32_t) {
         d.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         if (!CreateImage(down, d)) return;
         InitTargetImage(down, false);
-        BeginRenderingView(down.view, VK_IMAGE_LAYOUT_GENERAL, t.gw, t.gh, false);
+        BeginRenderingView(down.view, kBgra, VK_IMAGE_LAYOUT_GENERAL, t.gw, t.gh, false);
         SetViewport(0, 0, float(t.gw), float(t.gh));
         VkRect2D all{{0, 0}, {t.gw, t.gh}};
         vkCmdSetScissor(Cur().cmd, 0, 1, &all);
@@ -2532,7 +2557,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
         ImageBarrier(cmd, swap_images_[img], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-        BeginRenderingView(swap_views_[img], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, swap_w_, swap_h_, true);
+        BeginRenderingView(swap_views_[img], swap_fmt_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, swap_w_, swap_h_, true);
         if (t) PresentBlit(*t, pillarbox);
         EndRendering();
         ImageBarrier(cmd, swap_images_[img], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
