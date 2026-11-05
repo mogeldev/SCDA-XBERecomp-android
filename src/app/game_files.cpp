@@ -37,6 +37,11 @@ constexpr wchar_t kTitle[] = L"Splinter Cell: Double Agent";
 fs::path FindAssets() {
     auto dir = ExeDir();
     std::error_code ec;
+#ifdef __ANDROID__
+    // Setup publishes the imported assets and library together; saves/settings stay outside game/.
+    if (fs::is_regular_file(dir / "game" / "libscda_code.so", ec)
+        && fs::is_regular_file(dir / "game" / "assets" / IMAGE_XBE, ec)) return dir / "game" / "assets";
+#endif
     for (int i = 0; i < 6; i++) {
         if (fs::is_directory(dir / "assets", ec)) return dir / "assets";
         if (!dir.has_parent_path() || dir.parent_path() == dir) break;

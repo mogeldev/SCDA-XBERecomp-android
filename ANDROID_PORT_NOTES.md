@@ -1,6 +1,6 @@
 # SCDA Android port: notes
 
-State as of 2026-11-05. Branch `android-port`; latest work: controller settings and live render options, built and user-verified on Adreno 710.
+State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player builder and first-boot game ZIP importer.
 
 ## Scope
 
@@ -9,7 +9,7 @@ State as of 2026-11-05. Branch `android-port`; latest work: controller settings 
 - Controller only. No touch, mouse or keyboard.
 - Shader Model 1.1 Xbox look only. No SM3, HDR, AO, SMAA or MSAA.
 - Must run on Snapdragon/Adreno and Mali. Mali has no BC textures, so they are decoded on the CPU.
-- The game code is recompiled on the player's Windows PC into `libscda_code.so`, then copied with the game files into the app folder over USB. `tools/android-builder/` provides the self-contained Windows builder package.
+- The game code is recompiled on the player's Windows PC into `libscda_code.so`. Players put it and the extracted campaign files into one ZIP; Android imports that ZIP on first boot through the system file picker. `tools/android-builder/` provides the self-contained Windows builder package.
 - Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor, GitHub Actions release packaging. Build and package locally.
 - minSdk 30.
 
@@ -32,7 +32,7 @@ Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunc
 
 ## Architecture
 
-- `libmain.so` (src/android/main.cpp) runs SDL_main. It copies `Android/data/<pkg>/files/libscda_code.so` into internal storage when present, else uses the dev copy in the APK, dlopens it and calls ScdaMain.
+- `SetupActivity` imports a private ZIP into `Android/data/<pkg>/files/game/` through the system file picker. It validates paths, XBE/ELF headers, ABI and CRCs, then atomically publishes the game directory. `libmain.so` copies the imported `game/libscda_code.so` into internal storage when present, else supports the existing `files/libscda_code.so` layout and the dev copy in the APK.
 - `libscda_code.so` is freestanding (`-nostdlib -z undefs`) with DT_NEEDED `libscda_host.so`. The host is linked `-z global -z undefs`, so its X86_FUNC overrides beat the code's weak aliases. Exceptions cross both ways with `ANDROID_STL=c++_shared`.
 - arm64 game code needs `-mno-outline-atomics`: the `__aarch64_*` helpers live in the compiler runtime, which the code doesn't link.
 - src/android/host.cpp stands in for app/main.cpp and the Windows-only app files. src/android/audio.cpp is SDL audio. core/win32_keys.h gives VK/XInput names off Windows. xnet.cpp runs on POSIX sockets.
@@ -90,6 +90,8 @@ Open points:
 
 ## Dev workflow
 
+- ZIP importer tests: see `android/tests/README.md`. 128 synthetic checks plus extraction/validation of the real campaign ZIP passed. ZIP packaging tests pass; ARM64 APK built without embedded game code and existing Adreno install launched successfully. User confirmed the fresh-install game ZIP import works on Adreno 710. Import uses a staging directory, lock, free-space/size limits and cancellation; never overwrites an existing `game/` folder, saves or settings.
+- `tools/android-builder/package-game.ps1` creates the player's private import ZIP, including only `libscda_code.so`, `assets/default.xbe`, `assets/Default/` and `assets/Media/`. No external ZIP library needed; .NET streams files into ZIP/ZIP64.
 - Windows builder: `tools/android-builder/package.ps1` creates `out/SCDA-Android-ARM64-Builder.zip`; it contains no game assets or generated code. The extracted builder accepts the matching `default.xbe`, uses NDK Clang with `-mno-outline-atomics`, resumes object compilation with Ninja, and emits a 16-KB-aligned ARM64 ELF `libscda_code.so`.
 - Validation: `tools/android-builder/test.ps1` passed package-content, XBE rejection, full build, exports, host dependency, inline-atomic, no-op rebuild and resume checks. The generated library was copied to the Adreno 710 phone and loaded successfully by the APK.
 - SDK in this environment: `C:\Users\admin\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Android\Sdk`.
@@ -97,7 +99,7 @@ Open points:
   `C:\Users\admin\AppData\Local\Android\Sdk` path is absent. No global environment changes were made.
 - Direct build: `cmake -S . -B out/android-x86_64` with the NDK toolchain, `-DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared -DSCDA_DEV_CODE=ON`, then ninja.
 - APK (from the repo root): `android/gradlew.bat -p android assembleDebug -PdevCode -Pabi=x86_64` (or `-Pabi=arm64-v8a` for the phone). Output: `android/build/outputs/apk/debug/scda-debug.apk`.
-- Game files go to `/sdcard/Android/data/io.github.mogeldev.scda/files/assets`.
+- New installs use the first-boot ZIP importer; imported files go to `/sdcard/Android/data/io.github.mogeldev.scda/files/game/`. Existing direct installs under `files/assets` remain supported.
 - Controller in the emulator: `python tools/padbridge/padbridge.py` turns an XInput pad on the PC into a uinput Xbox 360 pad (needs adb root). The pad shows up in the game about 9 s after the uinput device appears.
 - Logs: `adb logcat -s scda:*`. The file log is in `files/logs`.
 - Windows check: `build.bat` with CI=1 and the SDK's cmake 3.31.6 on PATH.

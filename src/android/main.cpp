@@ -24,7 +24,9 @@ int Fail(const std::string& text) {
 // Android runs no code from shared storage: the player's build is copied into the app's own folder when it changed
 std::string CodePath() {
     std::error_code ec;
-    fs::path shared = fs::path(SDL_GetAndroidExternalStoragePath()) / kCode;
+    fs::path root = SDL_GetAndroidExternalStoragePath();
+    fs::path shared = root / "game" / kCode;
+    if (!fs::exists(shared, ec)) shared = root / kCode; // Existing USB/ADB installs.
     fs::path own = fs::path(SDL_GetAndroidInternalStoragePath()) / kCode;
     if (fs::exists(shared, ec)) {
         auto stamp = fs::last_write_time(shared, ec);
@@ -43,8 +45,9 @@ int main(int, char**) {
     std::string code = CodePath();
     void* lib = dlopen(code.c_str(), RTLD_NOW);
     if (!lib) {
-        return Fail(std::string("The game code is missing or does not fit this version. Build it on your PC and copy ") +
-                    kCode + " into " + SDL_GetAndroidExternalStoragePath() + ".\n\n" + dlerror());
+        return Fail(std::string("The game code is missing or does not fit this version. Import a game ZIP with ") +
+                    kCode + " from the matching player builder, or copy it into " + SDL_GetAndroidExternalStoragePath()
+                    + ".\n\n" + dlerror());
     }
     auto entry = reinterpret_cast<int (*)(const char*)>(dlsym(lib, "ScdaMain"));
     if (!entry) return Fail("libscda_host.so has no ScdaMain");

@@ -48,7 +48,7 @@ std::string Property(const char* name) {
 
 namespace app {
 
-// Android/data/<package>/files: the player copies the game into assets there over USB, logs and saves stay beside it
+// Android/data/<package>/files: imported game data is under game/, while logs and saves stay beside it
 std::filesystem::path ExeDir() {
     static const std::filesystem::path dir = SDL_GetAndroidExternalStoragePath();
     return dir;

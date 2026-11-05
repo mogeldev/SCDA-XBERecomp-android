@@ -14,12 +14,9 @@
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">
-        <activity android:name="org.libsdl.app.SDLActivity"
-            android:alwaysRetainTaskState="true"
-            android:launchMode="singleInstance"
+        <activity android:name="io.github.mogeldev.scda.SetupActivity"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
-            android:preferMinimalPostProcessing="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,6 +26,13 @@
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
         </activity>
+        <activity android:name="org.libsdl.app.SDLActivity"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="false" />
         <!-- mission relaunch: restarts the game process (Relaunch.java) -->
         <activity android:name="io.github.mogeldev.scda.Relaunch"
             android:process=":relaunch"
