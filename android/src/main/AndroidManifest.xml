@@ -29,6 +29,13 @@
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
         </activity>
+        <!-- mission relaunch: restarts the game process (Relaunch.java) -->
+        <activity android:name="io.github.mogeldev.scda.Relaunch"
+            android:process=":relaunch"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:exported="false" />
     </application>
 
 </manifest>

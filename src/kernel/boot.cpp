@@ -30,6 +30,12 @@ void CloseSockets();  // xdk/xnet.cpp
 bool CoopHostValues(uint32_t& rate, uint32_t& floor);
 }
 
+#ifdef __ANDROID__
+namespace app {
+void Restart(const char* exe);  // android/host.cpp
+}
+#endif
+
 namespace kernel {
 
 uint8_t* g_base = nullptr;
@@ -203,6 +209,9 @@ void Relaunch(const char* exe) {
     } else {
         LOGE("relaunch: cannot start %s.exe (%lu)", exe, GetLastError());
     }
+    std::_Exit(0);
+#elif defined(__ANDROID__)
+    app::Restart(exe);
     std::_Exit(0);
 #else
     char self[4096] = {};

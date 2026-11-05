@@ -1,11 +1,14 @@
 // The Android host: what app/main.cpp and the Windows-only app files are on Windows. libmain.so loads the game code
 // .so, which brings this library in, and calls ScdaMain on SDL's main thread.
+#include <jni.h>
 #include <sys/system_properties.h>
+#include <unistd.h>
 
 #include <SDL3/SDL.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <mutex>
@@ -99,6 +102,36 @@ void WaitWhileUnfocused() {
     LOGI("foreground: resumed");
 }
 
+// A mission starts as a quick reboot into the title (kernel::Relaunch). A fresh process does that: Relaunch.java, in
+// its own process, kills this one and starts the game again, which finds the launch data in hdd. Versus is not part
+// of the Android port.
+void Restart(const char* exe) {
+    if (std::string_view(exe) != "SCDA") {
+        std::remove(kernel::g_launch_file.c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Splinter Cell: Double Agent",
+                                 "Versus is not part of the Android version.", g_window);
+        return;
+    }
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    jclass intent_class = env->FindClass("android/content/Intent");
+    jobject intent = env->NewObject(intent_class, env->GetMethodID(intent_class, "<init>", "()V"));
+    env->CallObjectMethod(intent,
+                          env->GetMethodID(intent_class, "setClassName",
+                                           "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;"),
+                          activity, env->NewStringUTF("io.github.mogeldev.scda.Relaunch"));
+    env->CallObjectMethod(intent,
+                          env->GetMethodID(intent_class, "putExtra", "(Ljava/lang/String;I)Landroid/content/Intent;"),
+                          env->NewStringUTF("pid"), jint(getpid()));
+    env->CallVoidMethod(activity,
+                        env->GetMethodID(env->GetObjectClass(activity), "startActivity", "(Landroid/content/Intent;)V"),
+                        intent);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("relaunch: the restart activity did not start");
+    }
+}
+
 uint32_t RefreshRate() {
     const SDL_DisplayMode* mode = g_window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(g_window)) : nullptr;
     return mode && mode->refresh_rate > 1 ? uint32_t(mode->refresh_rate + 0.5f) : 0;
@@ -156,7 +189,9 @@ void SavePipelineCache() {}
 // code: the game code .so as libmain.so loaded it
 extern "C" __attribute__((visibility("default"))) int ScdaMain(const char* code) {
     SDL_AddEventWatch(Lifecycle, nullptr);
-    logx::Init((app::ExeDir() / "logs").string(), "scda", false);
+    // after a mission relaunch the log goes on in the same file
+    bool relaunched = std::filesystem::exists(app::ExeDir() / "hdd" / "launch.bin");
+    logx::Init((app::ExeDir() / "logs").string(), "scda", relaunched);
     app::Load();
     app::LogSystem();
 
