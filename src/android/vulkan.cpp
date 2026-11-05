@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -33,6 +34,9 @@
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
 #include "kernel/kernel.h"
+#include "android/frame_fences.h"
+#include "android/image_memory.h"
+#include "android/vertex_hlsl.h"
 
 namespace gpu {
 
@@ -45,6 +49,12 @@ constexpr VkDeviceSize kRingReserve = 8ull << 20;
 constexpr uint32_t kSetsPerPool = 2048;
 constexpr VkFormat kBgra = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr uint32_t kNone = UINT32_MAX;
+
+void CheckGpu(bool ok) {
+    if (ok) return;
+    LOGE("vulkan: GPU submit/fence failed; stopping before reusing in-flight resources");
+    std::abort();
+}
 
 // the full screen copy: src rectangle in uv, gamma lookup, alpha, n x n box filter, colour scale; xf places the quad
 // in clip space (scale, offset), rot turns it to the panel's own orientation
@@ -287,7 +297,7 @@ struct Buffer {
 
 struct Image {
     VkImage image = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
+    ImageMemory::Allocation alloc;
     VkImageView view = VK_NULL_HANDLE;    // what shaders sample: the depth aspect of a depth format
     VkImageView attach = VK_NULL_HANDLE;  // depth and stencil, to draw to
     VkFormat fmt = VK_FORMAT_UNDEFINED;
@@ -658,6 +668,7 @@ public:
     bool DeliverLate(uint32_t data) override;
     void RecordLate(uint32_t data) override;
     void Flush() override;
+    void WaitGpuFrame(uint64_t n) override { CheckGpu(fences_.WaitPresent(n)); }
     void SetGamma(const uint8_t*) override {}
     void SavePipelines();
 
@@ -666,10 +677,7 @@ private:
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer up = VK_NULL_HANDLE;   // uploads and new images, ahead of the draws
         VkCommandBuffer cmd = VK_NULL_HANDLE;  // the draws
-        VkFence fence = VK_NULL_HANDLE;
         VkSemaphore acquired = VK_NULL_HANDLE;
-        bool pending = false;
-        uint64_t serial = 0;  // submits_ of its last submission
         Buffer ring;
         VkDeviceSize used = 0;
         std::vector<VkDescriptorPool> pools;
@@ -779,6 +787,7 @@ private:
     bool bc_ = false;
     bool aniso_ = false;
     bool wireframe_ = false;
+    bool large_points_ = false;
     bool custom_border_ = false;  // VK_EXT_custom_border_color, without a format
     bool depth_linear_ = true;    // depth textures filter linearly
     VkFormat depth_fmt_ = VK_FORMAT_D24_UNORM_S8_UINT;
@@ -813,8 +822,8 @@ private:
     uint64_t frame_ = 0;
     uint64_t presents_ = 0;
     // submissions: counted, and the newest one the GPU is known to have finished (any thread reads it)
-    uint64_t submits_ = 0;
-    std::atomic<uint64_t> completed_{0};
+    FrameFences<kFrames> fences_;
+    ImageMemory image_memory_;
     std::atomic<uint64_t> presents_seen_{0};
     // surfaces locked without a wait (NOOVERWRITE): copies in flight, DeliverLate hands the newest finished one over
     static constexpr int kLateSlots = 3;
@@ -858,7 +867,10 @@ VulkanBackend* g_vk = nullptr;
         }                                               \
     } while (0)
 
-VulkanBackend::~VulkanBackend() { g_vk = nullptr; }
+VulkanBackend::~VulkanBackend() {
+    g_vk = nullptr;
+    if (dev_) vkDeviceWaitIdle(dev_);
+}
 
 bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     guest_w_ = width;
@@ -953,10 +965,12 @@ bool VulkanBackend::CreateDevice() {
     bc_ = have.textureCompressionBC;
     aniso_ = have.samplerAnisotropy;
     wireframe_ = have.fillModeNonSolid;
+    large_points_ = have.largePoints;
     VkPhysicalDeviceFeatures on{};
     on.textureCompressionBC = have.textureCompressionBC;
     on.samplerAnisotropy = have.samplerAnisotropy;
     on.fillModeNonSolid = have.fillModeNonSolid;
+    on.largePoints = have.largePoints;
 
     float priority = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -1118,6 +1132,7 @@ bool VulkanBackend::CreateLayouts() {
 }
 
 bool VulkanBackend::CreateFrames() {
+    if (!fences_.Init(dev_)) return false;
     for (Frame& f : frames_) {
         VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         pci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -1131,8 +1146,6 @@ bool VulkanBackend::CreateFrames() {
         VK_TRY(vkAllocateCommandBuffers(dev_, &ai, cbs));
         f.up = cbs[0];
         f.cmd = cbs[1];
-        VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-        VK_TRY(vkCreateFence(dev_, &fi, nullptr, &f.fence));
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VK_TRY(vkCreateSemaphore(dev_, &si, nullptr, &f.acquired));
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
@@ -1230,18 +1243,24 @@ bool VulkanBackend::CreateImage(Image& im, const ImageDesc& d) {
         im = {};
         return false;
     }
-    VkMemoryRequirements req;
-    vkGetImageMemoryRequirements(dev_, im.image, &req);
-    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    ai.allocationSize = req.size;
-    ai.memoryTypeIndex = MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (ai.memoryTypeIndex == kNone || vkAllocateMemory(dev_, &ai, nullptr, &im.mem) != VK_SUCCESS) {
+    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
+    requirements.pNext = &dedicated;
+    VkImageMemoryRequirementsInfo2 info{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2};
+    info.image = im.image;
+    vkGetImageMemoryRequirements2(dev_, &info, &requirements);
+    const auto& req = requirements.memoryRequirements;
+    uint32_t type = MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (type == kNone || !image_memory_.Allocate(dev_, req, type, dedicated.requiresDedicatedAllocation,
+                                                im.image, im.alloc)) {
         LOGE("vulkan: no memory for a %ux%u image", d.w, d.h);
-        vkDestroyImage(dev_, im.image, nullptr);
-        im = {};
+        DestroyImage(im);
         return false;
     }
-    vkBindImageMemory(dev_, im.image, im.mem, 0);
+    if (vkBindImageMemory(dev_, im.image, im.alloc.memory, im.alloc.offset) != VK_SUCCESS) {
+        DestroyImage(im);
+        return false;
+    }
     im.fmt = d.fmt;
     im.w = d.w;
     im.h = d.h;
@@ -1252,10 +1271,16 @@ bool VulkanBackend::CreateImage(Image& im, const ImageDesc& d) {
     vi.format = d.fmt;
     vi.subresourceRange = {VkImageAspectFlags(depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0,
                            d.levels, 0, d.layers};
-    vkCreateImageView(dev_, &vi, nullptr, &im.view);
+    if (vkCreateImageView(dev_, &vi, nullptr, &im.view) != VK_SUCCESS) {
+        DestroyImage(im);
+        return false;
+    }
     if (depth && (d.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
         if (HasStencil(d.fmt)) vi.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        vkCreateImageView(dev_, &vi, nullptr, &im.attach);
+        if (vkCreateImageView(dev_, &vi, nullptr, &im.attach) != VK_SUCCESS) {
+            DestroyImage(im);
+            return false;
+        }
     }
     return true;
 }
@@ -1266,7 +1291,7 @@ void VulkanBackend::DestroyImage(Image& im) {
     if (im.view) vkDestroyImageView(dev_, im.view, nullptr);
     if (im.attach) vkDestroyImageView(dev_, im.attach, nullptr);
     if (im.image) vkDestroyImage(dev_, im.image, nullptr);
-    if (im.mem) vkFreeMemory(dev_, im.mem, nullptr);
+    image_memory_.Free(dev_, im.alloc);
     im = {};
 }
 
@@ -1372,12 +1397,7 @@ VulkanBackend::Alloc VulkanBackend::Upload(VkDeviceSize size, VkDeviceSize align
 
 void VulkanBackend::BeginFrame() {
     Frame& f = Cur();
-    if (f.pending) {
-        vkWaitForFences(dev_, 1, &f.fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(dev_, 1, &f.fence);
-        f.pending = false;
-        if (f.serial > completed_.load()) completed_.store(f.serial);
-    }
+    CheckGpu(fences_.Begin(frame_ % kFrames));
     for (Image& im : f.dead_images) DestroyImage(im);
     for (Buffer& b : f.dead_buffers) DestroyBuffer(b);
     f.dead_images.clear();
@@ -1409,10 +1429,7 @@ void VulkanBackend::Submit(VkSemaphore wait, VkSemaphore signal) {
     si.pCommandBuffers = cbs;
     si.signalSemaphoreCount = signal ? 1 : 0;
     si.pSignalSemaphores = &signal;
-    VkResult r = vkQueueSubmit(queue_, 1, &si, f.fence);
-    if (r != VK_SUCCESS) LOG_FIRST(8, "vulkan: submit failed: %d", int(r));
-    f.pending = r == VK_SUCCESS;
-    f.serial = ++submits_;
+    CheckGpu(fences_.Submit(queue_, frame_ % kFrames, si));
 }
 
 void VulkanBackend::Flush() {
@@ -1964,6 +1981,11 @@ VkShaderModule VulkanBackend::VertexModule(const State& s, const Assembled& a, c
     if (it != vmods_.end()) return it->second;
     std::string src = sh.prog ? VertexProgramHlsl(s.vs->program, a.regs, a.decode)
                               : FixedVertexHlsl(a.regs, a.pretransformed, a.decode, sh.fk);
+    src = VulkanVertexHlsl(std::move(src), sh.prog, (a.regs & (1 << 6)) != 0, large_points_);
+    if (src.empty()) {
+        LOGE("vulkan: unrecognized generated vertex shader");
+        return vmods_[sh.vkey] = VK_NULL_HANDLE;
+    }
     return vmods_[sh.vkey] = Module(sh.quad ? QuadHlsl(std::move(src)) : src, EShLangVertex, "main");
 }
 
@@ -2305,6 +2327,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
     SurfaceSize(rt ? s.rt : s.zs, size.w, size.h);
     DrawConstants c{};
     FillSurfaceConstants(s, size, c);
+    auto point_size = [](float value, float fallback) { return std::isfinite(value) && value > 0 ? value : fallback; };
+    float point_max = large_points_ ? props_.limits.pointSizeRange[1] : 1.0f;
+    float point_min = large_points_ ? props_.limits.pointSizeRange[0] : 1.0f;
+    c.hdr[3] = std::clamp(point_size(Bits(s.rs[kRsPointSizeMax]), point_max), point_min, point_max);
+    c.surf[3] = std::clamp(point_size(Bits(s.rs[kRsPointSizeMin]), 1.0f), point_min, c.hdr[3]);
+    c.hdr[2] = point_size(Bits(s.rs[kRsPointSize]), 1.0f);
     FillCombinerConstants(s, c);
     FillTextureConstants(s, stages, c);
     if (sh.fixed_transform) {
@@ -2555,7 +2583,7 @@ bool VulkanBackend::DeliverLate(uint32_t data) {
     auto it = late_.find(data);
     if (it == late_.end()) return false;
     Late& l = it->second;
-    uint64_t done = completed_.load(), now = presents_seen_.load();
+    uint64_t done = fences_.Completed(), now = presents_seen_.load();
     int best = -1;
     for (int i = 0; i < kLateSlots; i++) {
         bool finished = l.serial[i] && l.serial[i] <= done;
@@ -2595,7 +2623,7 @@ void VulkanBackend::RecordLate(uint32_t data) {
     }
     // unless the GPU is a whole ring behind
     uint32_t slot = l.next;
-    if (l.serial[slot] > completed_.load()) return;
+    if (l.serial[slot] > fences_.Completed()) return;
     VkDeviceSize bytes = VkDeviceSize(t.gw) * t.gh * 4;
     if (!l.rb[slot].buf &&
         !CreateBuffer(l.rb[slot], bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -2613,7 +2641,7 @@ void VulkanBackend::RecordLate(uint32_t data) {
     vkCmdCopyImageToBuffer(Cur().cmd, src, VK_IMAGE_LAYOUT_GENERAL, l.rb[slot].buf, 1, &c);
     HostBarrier();
     GlobalBarrier();
-    l.serial[slot] = submits_ + 1;  // the next submission carries it
+    l.serial[slot] = fences_.NextSerial();  // the next submission carries it
     l.frame[slot] = presents_;
     l.next = (slot + 1) % kLateSlots;
 }
@@ -2754,6 +2782,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
                      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
     }
     Submit(img != kNone ? Cur().acquired : VK_NULL_HANDLE, img != kNone ? rendered_[img] : VK_NULL_HANDLE);
+    fences_.Present(presents_);
     if (img != kNone) {
         VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         pi.waitSemaphoreCount = 1;

@@ -47,7 +47,7 @@ constexpr Image kImages[] = {
     {L"SCDA_Versus", "sc4_adv.xbe", "sc4_adv.toml"},
 };
 
-// as CMakePresets.json and CMakeLists.txt compile it for build.bat
+// Legacy desktop compilation flags; Android uses tools/android-builder/build.ps1.
 constexpr wchar_t kClangFlags[] =
     L"-target x86_64-pc-windows-msvc -fms-compatibility-version=19.40 -std=c++20 -O2 -march=x86-64-v2 "
     L"-fno-strict-aliasing -DNDEBUG -DX86_GAME_CODE -nostdinc -nostdinc++ -w";
@@ -122,7 +122,7 @@ bool StampFor(const Image& image, const std::vector<uint8_t>& xbe, std::string& 
     return true;
 }
 
-// build.bat's DLL has no stamp: it is current when newer than the executable it was linked against
+// A CMake-built desktop DLL has no stamp: it is current when newer than the executable it was linked against
 bool Current(const Target& target) {
     std::error_code ec;
     fs::file_time_type built = fs::last_write_time(CodeDll(*target.image), ec);
