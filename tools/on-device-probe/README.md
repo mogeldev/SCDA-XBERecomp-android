@@ -51,7 +51,27 @@ Keep the phone unlocked and the prototype in the foreground until `PASS` appears
 
 `--sdk` defaults to `ANDROID_HOME`. The runner downloads compiler packages into `out/on-device-probe/`, builds/installs only the test APK, streams private inputs directly into the debug app's internal storage via `run-as`, verifies every transferred file with SHA-256, and waits for `PASS`. Raw `adb exec-in` avoids OEM shell corruption of binary input; verification waits for asynchronous extraction to finish. No shared-storage staging or `adb root` is used. Re-running replaces prototype outputs, not the game installation.
 
-Translation/compilation is one command at a time with a 300-second timeout per command. Android's `/system/bin/time -v` records per-process peak RSS and elapsed/user/system time alongside the app's wall time. RSS includes mapped compiler libraries, not the Java app or total system memory, and must not be extrapolated to parallel/full-game builds.
+Every command has a 300-second timeout. The smoke test is serial. Full builds use adaptive parallel batches: at most `cores - 1` workers, bounded by `(available RAM - reserve) / 512 MiB`. The reserve is at least 768 MiB or Android's low-memory threshold, whichever is higher. At least one worker is used. Moderate thermal pressure halves the CPU limit; severe or higher limits it to one. RAM/thermal status is checked between batches, not in the middle of a compiler process. The budget is conservative, not a guarantee against OOM on unusually large partitions. Link and translation remain single commands. The probe keeps its screen on while open; closing/backgrounding it can still interrupt the experiment.
+
+Android's `/system/bin/time -v` records per-process peak RSS and elapsed/user/system time alongside the app's wall time. RSS includes mapped compiler libraries, not the Java app or total system memory; summing process RSS double-counts shared pages.
+
+### Full ARM64 build (phone only)
+
+Append `--host-apk` to the phone command to compile all 129 on-device-generated source files and link against a matching game host:
+
+```bat
+python tools/on-device-probe/run.py --sdk "C:\path\to\Android\Sdk" --serial IP:CONNECTION_PORT --allow-phone --host-apk out/SCDA-Android-V1.apk
+```
+
+Only the host `.so` is read from that APK and sent as **link input**, not installed or loaded. The resulting private `libscda_code.so` stays in the probe app; the runner copies it to ignored `out/on-device-probe/libscda_code-phone.so` and verifies the transfer hash. The actual game app and saves are never modified. Objects are rebuilt from scratch each run; no resume/cache yet. This is a full **compile/link** check, not a full-game load/gameplay check. A successful link alone does not prove runtime symbol resolution. The runner waits up to two hours in full mode.
+
+Test worker selection without Android:
+
+```bat
+mkdir out\on-device-probe\job-tests
+javac -d out/on-device-probe/job-tests tools/on-device-probe/src/main/java/io/github/mogeldev/scda/compilerprobe/BuildJobs.java tools/on-device-probe/BuildJobsTest.java
+java -cp out/on-device-probe/job-tests io.github.mogeldev.scda.compilerprobe.BuildJobsTest
+```
 
 Outputs:
 
@@ -83,11 +103,17 @@ Both targets use target SDK 36 and normal app privileges, without root:
 
 The phone is the Xiaomi Redmi Note 13 Pro 5G (Snapdragon 7s Gen 2), accessed through wireless ADB. The translator process peaked at **137,884 KiB RSS (about 135 MiB)**; the generated partition compiler at **257,096 KiB (about 251 MiB)**; the linker at **62,536 KiB (about 61 MiB)**. The translator identified 33,172 functions. Both devices produced a 226,576-byte ARM64 object and a 248,872-byte partial shared library. Compilation timings cover one partition only, not full-game setup. Eight host unit tests cover ELF/archive helpers, both package manifests/ABI selection, XBE rejection and staging only hashes rather than generated sources.
 
-The ARM64 prototype APK is about **72 MiB** compressed; the x86-64 APK is roughly 76 MB, with roughly 206 MiB of staged compiler executables/libraries. Neither is size-optimized. The standalone project's `gradle.properties` gives Gradle a 2-GiB heap for packaging these large libraries. Only 4-KiB-page devices have been tested.
+The ARM64 prototype APK including the translator is about **76 MiB** compressed; the x86-64 APK is roughly 76 MB, with roughly 206 MiB of staged compiler executables/libraries. Neither is size-optimized. The standalone project's `gradle.properties` gives Gradle a 2-GiB heap for packaging these large libraries. Only 4-KiB-page devices have been tested.
+
+### Full adaptive phone build
+
+All **129 objects compiled and linked successfully in 437,526 ms (7 min 18 s)**, excluding translation, reference verification, APK installation and ADB transfer. Four compiler workers were selected on the eight-core / approximately 7.1-GiB-RAM phone, with 3,013 MiB available at initial worker selection. Every batch retained four workers; Android reported no thermal throttling status requiring a reduction during admission checks. The busiest recorded compiler reached approximately **275 MiB RSS** (per process, not total build memory). The full link took about 0.3 seconds. The earlier serial experiment was stopped before completion, so no measured end-to-end serial speedup is claimed.
+
+The output is **29,255,568 bytes (27.9 MiB)**, with SONAME `libscda_code.so`, sole DT_NEEDED `libscda_host.so`, NOW/RELRO, non-executable stack and 16-KiB-aligned LOAD segments. It was linked against the host extracted from the existing matching V1 game APK, copied back privately and SHA-256 verified. It has **not** been loaded or installed into the game. The x86-64 smoke path still passes, together with eight Python unit tests and eight Java worker-policy checks (CPU/RAM limits, one-core/low-memory floor and thermal reductions).
 
 ## Still unproven / next step
 
-- Full 129-source compilation, final host linkage, loading actual game code, gameplay, total/parallel peak RAM, battery/thermal cost and setup duration.
+- Loading actual game code and gameplay, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
 - API 30 and 16-KB-page devices.
 - Compiler flags are passed to the internal `-cc1` interface, which must be kept in sync with the pinned compiler. This is not a stable public driver API.
 - No production UI, ISO importer, resume/cancellation workflow or importer changes. Keep the Windows builder as the working alternative.
