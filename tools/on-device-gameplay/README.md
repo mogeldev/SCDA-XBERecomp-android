@@ -42,4 +42,15 @@ On the Redmi Note 13 Pro 5G / API 36, the separate APK installed successfully. A
 
 Observed: game startup sequence rendering on Vulkan, SDL stereo audio initialization, 33,172 dispatch functions, zero missing kernel imports, and an 8BitDo controller detected. The app remained running during observation. These are boot checks, not a measured gameplay-performance pass. Logs also contain failed voice-input opens because the existing app lacks `RECORD_AUDIO`, plus some unsuccessful intermediate asset-path lookups; neither was changed in this compiler experiment. Voice chat is not validated.
 
-Manual gameplay validation still requires a controller: menus, starting a mission, in-game rendering/audio/input, save/load and mission transitions. A screenshot or successful boot is not a gameplay pass.
+## User-confirmed gameplay checks
+
+Using the phone-built library in the separate test app, the user confirmed:
+
+- In-mission gameplay works.
+- Save and load work.
+- Backgrounding the app and resuming work.
+- The Iceland A → Iceland B transition continues successfully after pressing A.
+
+The transition initially appeared hung on its loading picture. Logs showed `loading: mapname=x01_iceland_b.unr?... , waiting for a key`, with no subsequent input acknowledgment. The existing host deliberately calls `input::WaitForPress()` before mission relaunch (`src/game/loading.cpp`). The user confirmed that pressing A continued the game. This was not a confirmed deadlock or on-device compiler failure. **Known UI issue: the captured loading picture had no visible “Press Any Key” prompt**, making the intentional wait look frozen; the cause of the missing prompt is not yet diagnosed.
+
+These are user-confirmed smoke checks on one phone, not exhaustive campaign, performance, long-session or multi-device validation. Production installation, saves and importer remain untouched.
