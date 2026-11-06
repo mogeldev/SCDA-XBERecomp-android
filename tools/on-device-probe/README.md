@@ -131,7 +131,7 @@ A fresh end-to-end phone run then repeated XBE translation (all 134 hashes match
 
 ## Still unproven / next step
 
-- Calling game code / gameplay, a load inside the actual SDL game process, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
+- See [`../on-device-gameplay/README.md`](../on-device-gameplay/README.md) for the separately installed SDL game-process test: the user confirmed gameplay, save/load, background/resume and the Iceland A → B transition with phone-built code. The transition intentionally waits for A, but its loading prompt was not visible; that UI issue remains undiagnosed. Exhaustive campaign/multi-device checks, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration remain unvalidated.
 - API 30 and 16-KB-page devices.
 - Compiler flags are passed to the internal `-cc1` interface, which must be kept in sync with the pinned compiler. This is not a stable public driver API.
 - No production UI, ISO importer, resume/cancellation workflow or importer changes. Keep the Windows builder as the working alternative.
