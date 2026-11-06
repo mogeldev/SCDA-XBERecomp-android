@@ -69,7 +69,9 @@ public final class ProbeActivity extends Activity {
         argv.add(new File(getApplicationInfo().nativeLibraryDir, "libprobe_" + tool + ".so").getPath());
         argv.addAll(Arrays.asList(args));
         ProcessBuilder builder = new ProcessBuilder(argv).directory(getFilesDir()).redirectErrorStream(true);
-        builder.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
+        // Keep the game's C++ runtime separate from Termux's newer compiler runtime.
+        builder.environment().put("LD_LIBRARY_PATH", tool.equals("load")
+                ? new File(getFilesDir(), "input/runtime").getPath() : getApplicationInfo().nativeLibraryDir);
         File diagnostic = File.createTempFile("command-", ".log", getFilesDir());
         builder.redirectOutput(diagnostic);
         long start = System.nanoTime();
@@ -82,6 +84,9 @@ public final class ProbeActivity extends Activity {
             log(tool + " exit=" + process.exitValue() + " time="
                     + ((System.nanoTime() - start) / 1_000_000) + "ms\n" + text);
             if (process.exitValue() != 0) throw new IllegalStateException(tool + " failed");
+            if (tool.equals("load") && !text.contains("\nLOAD_CHECK_PASS\n")) {
+                throw new IllegalStateException("Load checker did not validate dispatch tables");
+            }
         } finally {
             if (process.isAlive()) process.destroyForcibly();
             Files.deleteIfExists(diagnostic.toPath());
@@ -155,7 +160,7 @@ public final class ProbeActivity extends Activity {
     }
 
     private void fullBuild() throws Exception {
-        elf("input/libscda_host.so", 3, 183);
+        elf("input/runtime/libscda_host.so", 3, 183);
         Files.deleteIfExists(new File(getFilesDir(), "libscda_code.so").toPath());
         File objects = new File(getFilesDir(), "obj");
         if (!objects.isDirectory() && !objects.mkdir()) throw new IllegalStateException("Cannot create obj directory");
@@ -202,12 +207,13 @@ public final class ProbeActivity extends Activity {
         Files.write(new File(getFilesDir(), "objects.rsp").toPath(), response.toString().getBytes(StandardCharsets.UTF_8));
         command("lld", "-flavor", "gnu", "-shared", "-soname", "libscda_code.so",
                 "-z", "max-page-size=16384", "-z", "now", "-z", "relro", "--hash-style=gnu",
-                "--eh-frame-hdr", "--no-as-needed", "input/libscda_host.so", "@objects.rsp",
+                "--eh-frame-hdr", "--no-as-needed", "input/runtime/libscda_host.so", "@objects.rsp",
                 "-o", "libscda_code.so");
         elf("libscda_code.so", 3, 183);
         log("Full build: 129 objects linked in " + ((System.nanoTime() - start) / 1_000_000) + "ms");
         log("Full library SHA-256: " + digest(new File(getFilesDir(), "libscda_code.so"), "SHA-256"));
-        log("Link-only test: full game library has NOT been loaded or installed into the game");
+        command("load", new File(getFilesDir(), "libscda_code.so").getPath());
+        log("Full library load/dispatch check passed in isolated subprocess; not installed into game");
     }
 
     private void runProbe() throws Exception {
@@ -219,6 +225,12 @@ public final class ProbeActivity extends Activity {
         int machine = arm64 ? 183 : 62;
         log("Android " + android.os.Build.VERSION.SDK_INT + "; ABI: " + abi
                 + "; tools: " + getApplicationInfo().nativeLibraryDir);
+        if (getIntent().getBooleanExtra("load_only", false)) {
+            if (!arm64) throw new IllegalStateException("Game load check requires ARM64");
+            elf("input/libscda_code.so", 3, 183);
+            command("load", new File(getFilesDir(), "input/libscda_code.so").getPath());
+            return;
+        }
         command("clang", "--version");
         // Invoke cc1 directly: no desktop sysroot, resource headers, driver subprocesses or CRT needed.
         Files.write(new File(getFilesDir(), "tiny.cpp").toPath(),

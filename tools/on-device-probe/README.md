@@ -63,7 +63,19 @@ Append `--host-apk` to the phone command to compile all 129 on-device-generated 
 python tools/on-device-probe/run.py --sdk "C:\path\to\Android\Sdk" --serial IP:CONNECTION_PORT --allow-phone --host-apk out/SCDA-Android-V1.apk
 ```
 
-Only the host `.so` is read from that APK and sent as **link input**, not installed or loaded. The resulting private `libscda_code.so` stays in the probe app; the runner copies it to ignored `out/on-device-probe/libscda_code-phone.so` and verifies the transfer hash. The actual game app and saves are never modified. Objects are rebuilt from scratch each run; no resume/cache yet. This is a full **compile/link** check, not a full-game load/gameplay check. A successful link alone does not prove runtime symbol resolution. The runner waits up to two hours in full mode.
+The host `.so`, SDL and C++ runtime are read from that APK and sent as private inputs, **never packaged in the probe APK or installed into the game**. After linking, a packaged native checker loads `libscda_code.so` with `RTLD_NOW | RTLD_LOCAL`, matching production. DT_NEEDED brings in the matching host and its dependencies. The checker validates address metadata, all 33,172 dispatch mappings, their resolved function pointers (including host overrides), the entry mapping, four continuations and `ScdaMain`. It never calls `ScdaMain`, initializes SDL or calls generated game functions. Loading does execute native library initializers, so only use trusted, matching runtime inputs.
+
+The load checker runs in a **separate app-owned subprocess**, not the Java/JNI process. Its `LD_LIBRARY_PATH` points only to the privately transferred game runtime; compiler processes still use the APK's pinned Termux runtime. This prevents a false pass against Termux's newer C++ library. A missing symbol, failed dispatch check or subprocess crash fails the probe. The checker targets the fixed validated USA image; it is not a validator for arbitrary/untrusted native libraries.
+
+The resulting private `libscda_code.so` stays in the probe app; the runner copies it to ignored `out/on-device-probe/libscda_code-phone.so` and verifies the transfer hash. The actual game app and saves are never modified. Objects are rebuilt from scratch each run; no resume/cache yet. This is a **compile/link/load/dispatch** check, not a gameplay check. The runner waits up to two hours in full mode.
+
+To repeat only the load check using the previously retrieved phone-built library (no translation or compilation), append:
+
+```bat
+--code-library out/on-device-probe/libscda_code-phone.so
+```
+
+This requires `--host-apk`. Inputs must be ARM64 ELF64 shared libraries. Load-only mode transfers its input separately and never overwrites the retrieved build output.
 
 Test worker selection without Android:
 
@@ -109,11 +121,17 @@ The ARM64 prototype APK including the translator is about **76 MiB** compressed;
 
 All **129 objects compiled and linked successfully in 437,526 ms (7 min 18 s)**, excluding translation, reference verification, APK installation and ADB transfer. Four compiler workers were selected on the eight-core / approximately 7.1-GiB-RAM phone, with 3,013 MiB available at initial worker selection. Every batch retained four workers; Android reported no thermal throttling status requiring a reduction during admission checks. The busiest recorded compiler reached approximately **275 MiB RSS** (per process, not total build memory). The full link took about 0.3 seconds. The earlier serial experiment was stopped before completion, so no measured end-to-end serial speedup is claimed.
 
-The output is **29,255,568 bytes (27.9 MiB)**, with SONAME `libscda_code.so`, sole DT_NEEDED `libscda_host.so`, NOW/RELRO, non-executable stack and 16-KiB-aligned LOAD segments. It was linked against the host extracted from the existing matching V1 game APK, copied back privately and SHA-256 verified. It has **not** been loaded or installed into the game. The x86-64 smoke path still passes, together with eight Python unit tests and eight Java worker-policy checks (CPU/RAM limits, one-core/low-memory floor and thermal reductions).
+The output is **29,255,568 bytes (27.9 MiB)**, with SONAME `libscda_code.so`, sole DT_NEEDED `libscda_host.so`, NOW/RELRO, non-executable stack and 16-KiB-aligned LOAD segments. It was linked against the host extracted from the existing matching V1 game APK, copied back privately and SHA-256 verified. It has **not** been installed into the game. The x86-64 smoke path still passes, together with eleven Python unit tests (including runtime staging/rejection) and eight Java worker-policy checks (CPU/RAM limits, one-core/low-memory floor and thermal reductions).
+
+### Full-library load validation
+
+The phone-built library successfully loads in the isolated native subprocess with the matching V1 host, SDL and C++ runtime. All **33,172 mappings**, **4 continuations**, entry metadata and `ScdaMain` resolve correctly, including **290 host overrides**. Initial load plus complete dispatch checking took approximately **5.1 seconds**, with **61,748 KiB peak RSS**. No generated function or `ScdaMain` was called. Missing code, missing host and a tiny library with the wrong exports were each rejected with exit code 1. These loader checks ran on the phone under the debug app UID; normal-app execution of the success path was driven by the probe activity.
+
+A fresh end-to-end phone run then repeated XBE translation (all 134 hashes matched), compiled all 129 objects, linked in **410,351 ms (6 min 50 s for compile/link)**, and passed the complete load/dispatch check in approximately **5.0 seconds**. The private output transfer hash was verified. A separate load-only rerun passed too. The x86-64 emulator smoke path was rerun successfully; its game output remains a deliberately unloaded ARM64 partial library.
 
 ## Still unproven / next step
 
-- Loading actual game code and gameplay, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
+- Calling game code / gameplay, a load inside the actual SDL game process, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
 - API 30 and 16-KB-page devices.
 - Compiler flags are passed to the internal `-cc1` interface, which must be kept in sync with the pinned compiler. This is not a stable public driver API.
 - No production UI, ISO importer, resume/cancellation workflow or importer changes. Keep the Windows builder as the working alternative.

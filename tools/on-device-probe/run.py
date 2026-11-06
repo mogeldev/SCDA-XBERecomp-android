@@ -14,12 +14,25 @@ import prepare
 PACKAGE = 'io.github.mogeldev.scda.compilerprobe'
 
 
+def stage_host(apk):
+    """Keep game runtime inputs private, outside the compiler APK."""
+    runtime = prepare.WORK / 'input/runtime'
+    runtime.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(apk) as game:
+        for name in ('libscda_host.so', 'libSDL3.so', 'libc++_shared.so'):
+            data = game.read('lib/arm64-v8a/' + name)
+            if len(data) < 64 or data[:6] != b'\x7fELF\x02\x01' or data[16:20] != b'\x03\x00\xb7\x00':
+                raise ValueError(f'Host APK has invalid ARM64 shared library: {name}')
+            (runtime / name).write_bytes(data)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', default=os.environ.get('ANDROID_HOME'), help='Android SDK path')
     parser.add_argument('--serial', default='emulator-5554', help='Target adb serial (Wi-Fi IP:port is supported)')
     parser.add_argument('--allow-phone', action='store_true', help='Allow installation of the separate probe APK on a phone')
-    parser.add_argument('--host-apk', type=Path, help='Full ARM64 build: use this matching game APK as link-only host input')
+    parser.add_argument('--host-apk', type=Path, help='Full ARM64 build/load check using this matching game APK runtime')
+    parser.add_argument('--code-library', type=Path, help='Load-check an existing ARM64 library instead of recompiling (requires --host-apk)')
     args = parser.parse_args()
     sdk = Path(args.sdk or '').resolve()
     adb = sdk / 'platform-tools/adb.exe'
@@ -39,13 +52,17 @@ def main():
         parser.error('Physical device: pass --allow-phone to install only the separate compiler-probe APK')
     if args.host_apk and abi != 'arm64-v8a':
         parser.error('--host-apk full build currently requires an ARM64 device')
+    if args.code_library and not args.host_apk:
+        parser.error('--code-library requires --host-apk')
+    # Read before preparation so callers may use the previous private output as input.
+    code = args.code_library.read_bytes() if args.code_library else None
+    if code is not None and (len(code) < 64 or code[:6] != b'\x7fELF\x02\x01' or code[16:20] != b'\x03\x00\xb7\x00'):
+        parser.error('--code-library must be an ARM64 ELF64 shared library')
     prepare.main(abi)
     if args.host_apk:
-        with zipfile.ZipFile(args.host_apk) as game:
-            host = game.read('lib/arm64-v8a/libscda_host.so')
-        if host[:6] != b'\x7fELF\x02\x01' or host[18:20] != b'\xb7\x00':
-            parser.error('Host APK does not contain an ARM64 ELF64 host')
-        (prepare.WORK / 'input/libscda_host.so').write_bytes(host)
+        stage_host(args.host_apk)
+    if code is not None:
+        (prepare.WORK / 'input/libscda_code.so').write_bytes(code)
     env = dict(os.environ, ANDROID_HOME=str(sdk), ANDROID_SDK_ROOT=str(sdk))
     # Separate static-STL executable: do not replace the Termux compiler's newer shared libc++.
     cmake = sdk / 'cmake/3.31.6/bin/cmake.exe'
@@ -88,7 +105,8 @@ def main():
             raise SystemExit('Private input transfer failed SHA-256 validation; probe not started')
         time.sleep(1)
     device('shell', 'am', 'start', '-n', PACKAGE + '/.ProbeActivity',
-           '--ez', 'full_build', 'true' if args.host_apk else 'false')
+           '--ez', 'full_build', 'true' if args.host_apk else 'false',
+           '--ez', 'load_only', 'true' if args.code_library else 'false')
     deadline = time.monotonic() + (7200 if args.host_apk else 660)
     while time.monotonic() < deadline:
         result = subprocess.run([str(adb), '-s', args.serial, 'shell', 'run-as', PACKAGE,
@@ -99,7 +117,7 @@ def main():
             (prepare.WORK / f'result-{abi}.txt').write_text(result.stdout)
             if not result.stdout.rstrip().endswith('\nPASS'):
                 raise SystemExit('Compiler probe failed; see out/on-device-probe/result.txt')
-            if args.host_apk:
+            if args.host_apk and not args.code_library:
                 output = prepare.WORK / 'libscda_code-phone.so'
                 with output.open('wb') as stream:
                     device('exec-out', 'run-as', PACKAGE, 'cat', 'files/libscda_code.so', stdout=stream)
