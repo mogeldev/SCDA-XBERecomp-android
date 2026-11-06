@@ -5,7 +5,11 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import org.json.JSONObject;
 import java.io.File;
+import java.io.FileInputStream;
+import java.security.MessageDigest;
+import java.util.Iterator;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -64,10 +68,10 @@ public final class ProbeActivity extends Activity {
         builder.redirectOutput(diagnostic);
         long start = System.nanoTime();
         Process process = builder.start();
-        if (!process.waitFor(180, TimeUnit.SECONDS)) {
+        if (!process.waitFor(300, TimeUnit.SECONDS)) {
             process.destroyForcibly();
             process.waitFor();
-            throw new IllegalStateException(tool + " timed out after 180 seconds");
+            throw new IllegalStateException(tool + " timed out after 300 seconds");
         }
         String text = new String(Files.readAllBytes(diagnostic.toPath()), StandardCharsets.UTF_8);
         log(tool + " exit=" + process.exitValue() + " time="
@@ -84,6 +88,46 @@ public final class ProbeActivity extends Activity {
             throw new IllegalStateException("Wrong ELF type/architecture: " + name);
         }
         log(name + ": ELF64 type=" + type + " machine=" + machine + " size=" + bytes.length);
+    }
+
+    private String digest(File file, String algorithm) throws Exception {
+        MessageDigest hash = MessageDigest.getInstance(algorithm);
+        try (FileInputStream in = new FileInputStream(file)) {
+            byte[] buffer = new byte[65536];
+            int count;
+            while ((count = in.read(buffer)) != -1) hash.update(buffer, 0, count);
+        }
+        StringBuilder hex = new StringBuilder();
+        for (byte value : hash.digest()) hex.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
+        return hex.toString();
+    }
+
+    private void translate() throws Exception {
+        File xbe = new File(getFilesDir(), "input/default.xbe");
+        if (!digest(xbe, "SHA-1").equals("91290baf93c2f6ae735a3106c48734665c826d84")) {
+            throw new IllegalStateException("Unsupported default.xbe; translator not started");
+        }
+        // A fresh directory makes stale output incapable of passing the reference checks.
+        File generated = new File(getFilesDir(), "generated");
+        if (generated.exists()) {
+            File[] files = generated.listFiles();
+            if (files == null) throw new IllegalStateException("Cannot list previous translator output");
+            for (File file : files) Files.delete(file.toPath());
+            Files.delete(generated.toPath());
+        }
+        command("recomp", "input/config/scda_v2.toml", "input/default.xbe", "generated");
+        JSONObject expected = new JSONObject(new String(Files.readAllBytes(
+                new File(getFilesDir(), "input/expected.json").toPath()), StandardCharsets.UTF_8));
+        if (expected.length() != 134) throw new IllegalStateException("Expected 134 translator reference hashes");
+        Iterator<String> names = expected.keys();
+        while (names.hasNext()) {
+            String name = names.next();
+            if (!name.matches("[A-Za-z0-9_.]+")) throw new IllegalStateException("Invalid reference filename");
+            if (!digest(new File(generated, name), "SHA-256").equals(expected.getString(name))) {
+                throw new IllegalStateException("Translator output differs from Windows reference: " + name);
+            }
+        }
+        log("XBE translation: all 134 outputs match Windows SHA-256 references");
     }
 
     private void runProbe() throws Exception {
@@ -109,16 +153,14 @@ public final class ProbeActivity extends Activity {
         int answer = checkLibrary(new File(getFilesDir(), "libtiny.so").getPath());
         if (answer != 42) throw new IllegalStateException("Loaded function returned " + answer);
         log("dlopen/dlsym/call: 42 (expected)");
-        if (!new File(getFilesDir(), "input/x86_recomp.0.cpp").isFile()) {
-            throw new IllegalStateException("Push private generated input before running the probe; see README");
-        }
+        translate();
         command("clang", "-cc1", "-triple", "aarch64-linux-android30", "-emit-obj",
                 "-std=c++20", "-O2", "-mrelocation-model", "pic", "-pic-level", "2",
                 "-funwind-tables=2", "-relaxed-aliasing", "-fcxx-exceptions", "-fexceptions",
                 "-stack-protector", "2", "-target-feature", "+neon",
                 "-target-feature", "-outline-atomics", "-DX86_GAME_CODE",
-                "-nostdsysteminc", "-nobuiltininc", "-w", "-Iinput", "-Iinput/cpu/freestanding",
-                "-o", "game-arm64.o", "input/x86_recomp.0.cpp");
+                "-nostdsysteminc", "-nobuiltininc", "-w", "-Igenerated", "-Iinput", "-Iinput/cpu/freestanding",
+                "-o", "game-arm64.o", "generated/x86_recomp.0.cpp");
         elf("game-arm64.o", 1, 183);
         // Partial game library: unresolved host/other-partition references are intentional; never load it.
         command("lld", "-flavor", "gnu", "-shared", "-z", "max-page-size=16384",

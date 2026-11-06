@@ -37,12 +37,23 @@ def main():
         parser.error('Physical device: pass --allow-phone to install only the separate compiler-probe APK')
     prepare.main(abi)
     env = dict(os.environ, ANDROID_HOME=str(sdk), ANDROID_SDK_ROOT=str(sdk))
+    # Separate static-STL executable: do not replace the Termux compiler's newer shared libc++.
+    cmake = sdk / 'cmake/3.31.6/bin/cmake.exe'
+    recomp_build = prepare.WORK / 'recompiler' / abi
+    subprocess.run([str(cmake), '-S', str(prepare.HERE / 'recompiler'), '-B', str(recomp_build),
+                    '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+                    f'-DCMAKE_MAKE_PROGRAM={sdk / "cmake/3.31.6/bin/ninja.exe"}',
+                    f'-DCMAKE_TOOLCHAIN_FILE={sdk / "ndk/29.0.14206865/build/cmake/android.toolchain.cmake"}',
+                    f'-DANDROID_ABI={abi}', '-DANDROID_PLATFORM=android-30',
+                    '-DANDROID_STL=c++_static'], check=True)
+    subprocess.run([str(cmake), '--build', str(recomp_build), '--parallel', '4'], check=True)
     subprocess.run([str(prepare.ROOT / 'android/gradlew.bat'), '-p', str(prepare.HERE),
                     '--project-cache-dir', str(prepare.WORK / 'gradle'), f'-Pabi={abi}', 'assembleDebug'],
                    env=env, check=True)
     apk = prepare.WORK / 'build/outputs/apk/debug/scda-compiler-probe-debug.apk'
     device('install', '-r', str(apk))
     device('shell', 'am', 'force-stop', PACKAGE)
+    device('shell', 'run-as', PACKAGE, 'rm', '-rf', 'files/input')
     device('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'files/input')
     device('shell', 'run-as', PACKAGE, 'rm', '-f', 'files/result.txt')
     # Stream private sources directly into app storage, never into shared /sdcard or /data/local/tmp.
@@ -67,7 +78,7 @@ def main():
             raise SystemExit('Private input transfer failed SHA-256 validation; probe not started')
         time.sleep(1)
     device('shell', 'am', 'start', '-n', PACKAGE + '/.ProbeActivity')
-    deadline = time.monotonic() + 420
+    deadline = time.monotonic() + 660
     while time.monotonic() < deadline:
         result = subprocess.run([str(adb), '-s', args.serial, 'shell', 'run-as', PACKAGE,
                                  'cat', 'files/result.txt'], capture_output=True, text=True)
