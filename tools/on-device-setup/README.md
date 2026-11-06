@@ -50,6 +50,14 @@ Then test Back during compilation → **Compile / resume**, and force-stop **onl
 - Manual system-picker UX, cancelling during extraction and low-storage stress remain unvalidated.
 - ARM64/API 36 build only. No foreground service/background compilation; keep setup open. No ISO extraction, production rollout, licensing/distribution approval or low-storage stress testing.
 
+## Session handoff
+
+The user uninstalled all test builds from the phone after validation. Do not reinstall or touch the normal game without a new request. The test apps' private device caches/saves are no longer available.
+
+Local temporary transfer ZIP/tar files, duplicate probe inputs and diagnostic screenshots/raw hang captures were removed during cleanup. Source game assets, release packages, pinned compiler downloads, build caches, concise validation logs and the validated phone-built library remain under their existing paths (private outputs stay ignored under `out/`). The test emulator and Gradle daemons were stopped.
+
+Next session: validate the manual system picker and extraction cancellation in the isolated setup app, then exercise low-storage handling without filling the user's real phone. Review compiler provenance/licensing/distribution and production integration before shipping; Windows compilation remains the supported alternative. Known unrelated issue: mission loading intentionally waits for A but its prompt was not visible in the earlier test.
+
 Run host tests:
 
 ```bat
