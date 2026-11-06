@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application' version '9.4.1'
+}
+
+layout.buildDirectory = file('../../out/on-device-probe/build')
+android {
+    namespace = 'io.github.mogeldev.scda.compilerprobe'
+    compileSdk = 36
+    ndkVersion = '29.0.14206865'
+    defaultConfig {
+        applicationId = 'io.github.mogeldev.scda.compilerprobe'
+        minSdk = 30
+        targetSdk = 36
+        versionCode = 1
+        versionName = '0.1'
+        ndk { abiFilters 'x86_64' }
+        externalNativeBuild.cmake.arguments '-DANDROID_STL=none'
+    }
+    sourceSets.main.jniLibs.srcDirs = ['../../out/on-device-probe/jniLibs']
+    externalNativeBuild.cmake {
+        path = file('CMakeLists.txt')
+        version = '3.31.6'
+        buildStagingDirectory = file('../../out/on-device-probe/cxx')
+    }
+    packaging.jniLibs {
+        useLegacyPackaging = true
+        keepDebugSymbols += ['**/*.so']
+    }
+}
