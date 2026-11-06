@@ -77,8 +77,9 @@ KEEP = {'libLLVM.so', 'libclang-cpp.so', 'libc++_shared.so', 'libffi.so',
         'libiconv.so', *RENAMES.values()}
 
 
-def relocate_elf(data):
+def relocate_elf(data, renames=None):
     """Relocate only ELF64 dynamic strings, without changing section offsets."""
+    renames = RENAMES if renames is None else renames
     data = bytearray(data)
     if data[:6] != b'\x7fELF\x02\x01':
         raise ValueError('Expected little-endian ELF64')
@@ -97,14 +98,14 @@ def relocate_elf(data):
         start = strbase + value
         end = data.index(0, start)
         old = data[start:end].decode()
-        new = '$ORIGIN' if tag == 29 else RENAMES.get(old, old)
+        new = '$ORIGIN' if tag == 29 else renames.get(old, old)
         if len(new) > len(old):
             raise ValueError(f'Replacement too long: {old}')
         data[start:end] = new.encode().ljust(end - start, b'\0')
     return bytes(data)
 
 
-def main(abi='x86_64'):
+def main(abi='x86_64', stage_private=True):
     if abi not in ('x86_64', 'arm64-v8a'):
         raise ValueError(f'Unsupported ABI: {abi}')
     WORK.mkdir(parents=True, exist_ok=True)
@@ -140,7 +141,7 @@ def main(abi='x86_64'):
     if missing:
         raise ValueError(f'Missing compiler libraries: {sorted(missing)}')
     # Copy private XBE/reference hashes only into work; adb sends them separately.
-    inputs = stage_inputs()
+    inputs = stage_inputs() if stage_private else 'not staged (tools only)'
     print(f'Compiler files: {dest}\nPrivate test input: {inputs}')
 
 

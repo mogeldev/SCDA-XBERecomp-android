@@ -46,7 +46,13 @@ public class SetupActivity extends Activity {
         title.setTextSize(24);
         layout.addView(title);
         TextView instructions = new TextView(this);
-        instructions.setText("Import a ZIP made from your own Xbox game and matching player-builder output.\n\n"
+        instructions.setText(supportsLocalCompilation()
+            ? "Import an assets-only ZIP from your own supported USA Xbox game.\n\n"
+                + "ZIP root: assets/default.xbe, assets/Default/ and assets/Media/\n\n"
+                + "Compilation runs on this device and may take several minutes. Keep this screen open. "
+                + "Back cancels; completed compiler work can be resumed. A matching prebuilt-library ZIP also works. "
+                + "Saves and settings will not be changed. Gameplay requires a controller."
+            : "Import a ZIP made from your own Xbox game and matching player-builder output.\n\n"
             + "ZIP root: libscda_code.so and assets/\n"
             + "Inside assets/: default.xbe, Default/ and Media/\n\n"
             + "Keep this screen open during import. You need enough free space for the extracted game. "
@@ -55,8 +61,11 @@ public class SetupActivity extends Activity {
         instructions.setPadding(0, padding, 0, padding);
         layout.addView(instructions);
         select = new Button(this);
-        select.setText("Import game ZIP");
-        select.setOnClickListener(view -> pickZip());
+        select.setText(pendingBuild(files) ? "Compile / resume" : "Import game ZIP");
+        select.setOnClickListener(view -> {
+            if (pendingBuild(getExternalFilesDir(null))) importZip(null);
+            else pickZip();
+        });
         layout.addView(select);
         progress = new ProgressBar(this);
         progress.setVisibility(android.view.View.GONE);
@@ -75,6 +84,15 @@ public class SetupActivity extends Activity {
         else if (state != null && state.getBoolean("importing"))
             status.setText("The previous import was interrupted. Select the ZIP again to retry.");
         select.requestFocus();
+    }
+
+    // Experimental setup opts in without changing release/Windows-builder import behavior.
+    protected boolean supportsLocalCompilation() { return false; }
+    protected void compileGame(File files, GameImport.Progress progress) throws IOException {}
+
+    private boolean pendingBuild(File files) {
+        return supportsLocalCompilation() && files != null
+            && GameImport.hasAssets(new File(files, "game/assets")) && !GameImport.isInstalled(files);
     }
 
     private boolean ready(File files) {
@@ -114,29 +132,31 @@ public class SetupActivity extends Activity {
         importZip(data.getData());
     }
 
-    private void importZip(Uri uri) {
+    protected void importZip(Uri uri) {
         select.setEnabled(false);
         progress.setVisibility(android.view.View.VISIBLE);
         status.setText("Opening ZIP…");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         worker = new Thread(() -> {
             String error = null;
-            try (InputStream input = getContentResolver().openInputStream(uri)) {
-                if (input == null) throw new IOException("Cannot open the selected ZIP.");
+            try (InputStream input = uri == null ? null : getContentResolver().openInputStream(uri)) {
+                if (uri != null && input == null) throw new IOException("Cannot open the selected ZIP.");
                 File files = getExternalFilesDir(null);
                 if (files == null) throw new IOException("App storage is unavailable.");
                 // The setup and native runtime execute in the same ABI/process.
                 int machine = android.os.Build.SUPPORTED_ABIS[0].equals("x86_64") ? 62 : 183;
                 long[] lastUpdate = {0};
-                GameImport.extract(input, files, machine, (name, bytes) -> {
+                GameImport.Progress update = (name, bytes) -> {
                     long now = android.os.SystemClock.elapsedRealtime();
-                    if (now - lastUpdate[0] < 250) return;
+                    if (bytes >= 0 && now - lastUpdate[0] < 250) return;
                     lastUpdate[0] = now;
-                    String text = String.format(Locale.ROOT, "Extracted %.1f MiB\n%s", bytes / 1048576.0, name);
+                    String text = bytes < 0 ? name : String.format(Locale.ROOT, "Extracted %.1f MiB\n%s", bytes / 1048576.0, name);
                     runOnUiThread(() -> {
                         if (!isDestroyed()) status.setText(text);
                     });
-                });
+                };
+                if (input != null) GameImport.extract(input, files, machine, supportsLocalCompilation(), update);
+                if (pendingBuild(files)) compileGame(files, update);
             } catch (IOException | RuntimeException e) {
                 error = e.getMessage() != null ? e.getMessage() : e.toString();
                 android.util.Log.e("SCDAImport", "Import failed", e);
@@ -149,7 +169,8 @@ public class SetupActivity extends Activity {
                 progress.setVisibility(android.view.View.GONE);
                 if (failure == null) launchGame();
                 else {
-                    status.setText("Import failed: " + failure + "\n\nYour saves and settings were not changed. Select a ZIP to retry.");
+                    status.setText("Setup stopped: " + failure + "\n\nYour saves and settings were not changed. Retry or resume below.");
+                    select.setText(pendingBuild(getExternalFilesDir(null)) ? "Compile / resume" : "Import game ZIP");
                     select.setEnabled(true);
                     select.requestFocus();
                 }
@@ -172,7 +193,7 @@ public class SetupActivity extends Activity {
     @Override public void onBackPressed() {
         if (worker != null) {
             worker.interrupt();
-            status.setText("Cancelling import…");
+            status.setText("Cancelling setup… Completed compiler work will be kept.");
         } else super.onBackPressed();
     }
 
