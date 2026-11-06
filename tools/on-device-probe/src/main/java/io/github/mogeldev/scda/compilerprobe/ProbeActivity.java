@@ -16,6 +16,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Callable;
+import android.app.ActivityManager;
+import android.os.PowerManager;
 
 public final class ProbeActivity extends Activity {
     static { System.loadLibrary("probe"); }
@@ -30,6 +35,7 @@ public final class ProbeActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(output);
         setContentView(scroll);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         new Thread(() -> {
             try {
                 runProbe();
@@ -48,7 +54,7 @@ public final class ProbeActivity extends Activity {
         }, "compiler-probe").start();
     }
 
-    private void log(String text) {
+    private synchronized void log(String text) {
         report.append(text).append('\n');
         Log.i("CompilerProbe", text);
         String snapshot = report.toString();
@@ -64,30 +70,37 @@ public final class ProbeActivity extends Activity {
         argv.addAll(Arrays.asList(args));
         ProcessBuilder builder = new ProcessBuilder(argv).directory(getFilesDir()).redirectErrorStream(true);
         builder.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
-        File diagnostic = new File(getFilesDir(), "command.log");
+        File diagnostic = File.createTempFile("command-", ".log", getFilesDir());
         builder.redirectOutput(diagnostic);
         long start = System.nanoTime();
         Process process = builder.start();
-        if (!process.waitFor(300, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            process.waitFor();
-            throw new IllegalStateException(tool + " timed out after 300 seconds");
+        try {
+            if (!process.waitFor(300, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(tool + " timed out after 300 seconds");
+            }
+            String text = new String(Files.readAllBytes(diagnostic.toPath()), StandardCharsets.UTF_8);
+            log(tool + " exit=" + process.exitValue() + " time="
+                    + ((System.nanoTime() - start) / 1_000_000) + "ms\n" + text);
+            if (process.exitValue() != 0) throw new IllegalStateException(tool + " failed");
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+            Files.deleteIfExists(diagnostic.toPath());
         }
-        String text = new String(Files.readAllBytes(diagnostic.toPath()), StandardCharsets.UTF_8);
-        log(tool + " exit=" + process.exitValue() + " time="
-                + ((System.nanoTime() - start) / 1_000_000) + "ms\n" + text);
-        if (process.exitValue() != 0) throw new IllegalStateException(tool + " failed");
     }
 
     private void elf(String name, int type, int machine) throws Exception {
-        byte[] bytes = Files.readAllBytes(new File(getFilesDir(), name).toPath());
-        if (bytes.length < 64 || bytes[0] != 0x7f || bytes[1] != 'E' || bytes[2] != 'L'
+        File file = new File(getFilesDir(), name);
+        byte[] bytes = new byte[64];
+        try (java.io.DataInputStream in = new java.io.DataInputStream(new FileInputStream(file))) {
+            in.readFully(bytes);
+        }
+        if (file.length() < 64 || bytes[0] != 0x7f || bytes[1] != 'E' || bytes[2] != 'L'
                 || bytes[3] != 'F' || bytes[4] != 2 || bytes[5] != 1
                 || (bytes[16] & 255) != type || bytes[17] != 0
                 || (bytes[18] & 255) != machine || bytes[19] != 0) {
             throw new IllegalStateException("Wrong ELF type/architecture: " + name);
         }
-        log(name + ": ELF64 type=" + type + " machine=" + machine + " size=" + bytes.length);
+        log(name + ": ELF64 type=" + type + " machine=" + machine + " size=" + file.length());
     }
 
     private String digest(File file, String algorithm) throws Exception {
@@ -130,6 +143,73 @@ public final class ProbeActivity extends Activity {
         log("XBE translation: all 134 outputs match Windows SHA-256 references");
     }
 
+    private void compileGame(String source, String object) throws Exception {
+        command("clang", "-cc1", "-triple", "aarch64-linux-android30", "-emit-obj",
+                "-std=c++20", "-O2", "-mrelocation-model", "pic", "-pic-level", "2",
+                "-funwind-tables=2", "-relaxed-aliasing", "-fcxx-exceptions", "-fexceptions",
+                "-stack-protector", "2", "-target-feature", "+neon",
+                "-target-feature", "-outline-atomics", "-DX86_GAME_CODE",
+                "-nostdsysteminc", "-nobuiltininc", "-w", "-Igenerated", "-Iinput", "-Iinput/cpu/freestanding",
+                "-o", object, "generated/" + source);
+        elf(object, 1, 183);
+    }
+
+    private void fullBuild() throws Exception {
+        elf("input/libscda_host.so", 3, 183);
+        Files.deleteIfExists(new File(getFilesDir(), "libscda_code.so").toPath());
+        File objects = new File(getFilesDir(), "obj");
+        if (!objects.isDirectory() && !objects.mkdir()) throw new IllegalStateException("Cannot create obj directory");
+        long start = System.nanoTime();
+        List<String> sources = new ArrayList<>();
+        sources.add("x86_func_mapping.cpp");
+        for (int i = 0; i < 128; i++) sources.add("x86_recomp." + i + ".cpp");
+        StringBuilder response = new StringBuilder();
+        ActivityManager activity = getSystemService(ActivityManager.class);
+        PowerManager power = getSystemService(PowerManager.class);
+        int cores = Runtime.getRuntime().availableProcessors();
+        ExecutorService workers = Executors.newFixedThreadPool(Math.max(1, cores - 1));
+        int next = 0, previousLimit = -1;
+        try {
+            while (next < sources.size()) {
+                ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+                activity.getMemoryInfo(memory);
+                int thermal = power.getCurrentThermalStatus();
+                // Re-evaluate at batch boundaries when no compiler memory is still in flight.
+                int limit = BuildJobs.choose(cores, memory.availMem, memory.threshold, thermal);
+                if (limit != previousLimit) {
+                    log("Build workers=" + limit + "; cores=" + cores + "; availableMiB="
+                            + memory.availMem / BuildJobs.MIB + "; thermal=" + thermal);
+                    previousLimit = limit;
+                }
+                List<Callable<String>> batch = new ArrayList<>();
+                for (int count = 0; count < limit && next < sources.size(); count++) {
+                    final String source = sources.get(next++);
+                    log("Compiling " + next + "/129: " + source);
+                    batch.add(() -> {
+                        compileGame(source, "obj/" + source + ".o");
+                        return source;
+                    });
+                }
+                for (java.util.concurrent.Future<String> result : workers.invokeAll(batch)) result.get();
+                log("Completed " + next + "/129");
+            }
+        } finally {
+            // Let active bounded commands finish before publishing failure; never link incomplete output.
+            workers.shutdown();
+            if (!workers.awaitTermination(310, TimeUnit.SECONDS)) workers.shutdownNow();
+        }
+        for (String source : sources) response.append("obj/").append(source).append(".o\n");
+        Files.write(new File(getFilesDir(), "objects.rsp").toPath(), response.toString().getBytes(StandardCharsets.UTF_8));
+        command("lld", "-flavor", "gnu", "-shared", "-soname", "libscda_code.so",
+                "-z", "max-page-size=16384", "-z", "now", "-z", "relro", "--hash-style=gnu",
+                "--eh-frame-hdr", "--no-as-needed", "input/libscda_host.so", "@objects.rsp",
+                "-o", "libscda_code.so");
+        elf("libscda_code.so", 3, 183);
+        log("Full build: 129 objects linked in " + ((System.nanoTime() - start) / 1_000_000) + "ms");
+        log("Full library SHA-256: " + digest(new File(getFilesDir(), "libscda_code.so"), "SHA-256"));
+        log("Link-only test: full game library has NOT been loaded or installed into the game");
+    }
+
     private void runProbe() throws Exception {
         Files.deleteIfExists(new File(getFilesDir(), "result.txt").toPath());
         String abi = android.os.Build.SUPPORTED_ABIS[0];
@@ -154,14 +234,12 @@ public final class ProbeActivity extends Activity {
         if (answer != 42) throw new IllegalStateException("Loaded function returned " + answer);
         log("dlopen/dlsym/call: 42 (expected)");
         translate();
-        command("clang", "-cc1", "-triple", "aarch64-linux-android30", "-emit-obj",
-                "-std=c++20", "-O2", "-mrelocation-model", "pic", "-pic-level", "2",
-                "-funwind-tables=2", "-relaxed-aliasing", "-fcxx-exceptions", "-fexceptions",
-                "-stack-protector", "2", "-target-feature", "+neon",
-                "-target-feature", "-outline-atomics", "-DX86_GAME_CODE",
-                "-nostdsysteminc", "-nobuiltininc", "-w", "-Igenerated", "-Iinput", "-Iinput/cpu/freestanding",
-                "-o", "game-arm64.o", "generated/x86_recomp.0.cpp");
-        elf("game-arm64.o", 1, 183);
+        if (getIntent().getBooleanExtra("full_build", false)) {
+            if (!arm64) throw new IllegalStateException("Full build requires ARM64 device");
+            fullBuild();
+            return;
+        }
+        compileGame("x86_recomp.0.cpp", "game-arm64.o");
         // Partial game library: unresolved host/other-partition references are intentional; never load it.
         command("lld", "-flavor", "gnu", "-shared", "-z", "max-page-size=16384",
                 "-z", "now", "-z", "relro", "--eh-frame-hdr", "-soname", "libpartial-game.so",
