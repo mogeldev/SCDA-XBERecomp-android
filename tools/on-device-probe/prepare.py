@@ -1,4 +1,5 @@
 """Stage private compiler-probe inputs. No game sources are put into the APK."""
+import argparse
 import concurrent.futures
 import hashlib
 import io
@@ -73,12 +74,15 @@ def relocate_elf(data):
     return bytes(data)
 
 
-def main():
+def main(abi='x86_64'):
+    if abi not in ('x86_64', 'arm64-v8a'):
+        raise ValueError(f'Unsupported ABI: {abi}')
     WORK.mkdir(parents=True, exist_ok=True)
-    packages = json.loads((HERE / 'packages.json').read_text())
+    manifest = 'packages.json' if abi == 'x86_64' else 'packages-arm64-v8a.json'
+    packages = json.loads((HERE / manifest).read_text())
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         archives = list(pool.map(fetch, packages))
-    dest = WORK / 'jniLibs/x86_64'
+    dest = WORK / 'jniLibs' / abi
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
@@ -98,6 +102,9 @@ def main():
                 if output:
                     data = tar.extractfile(member).read()
                     if data[:4] == b'\x7fELF':
+                        machine = struct.unpack_from('<H', data, 18)[0]
+                        if machine != (183 if abi == 'arm64-v8a' else 62):
+                            raise ValueError(f'Wrong compiler architecture: {archive.name}/{output}')
                         (dest / output).write_bytes(relocate_elf(data))
     missing = (KEEP | {'libprobe_clang.so', 'libprobe_lld.so'}) - {p.name for p in dest.iterdir()}
     if missing:
@@ -113,4 +120,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--abi', choices=['x86_64', 'arm64-v8a'], default='x86_64')
+    main(parser.parse_args().abi)

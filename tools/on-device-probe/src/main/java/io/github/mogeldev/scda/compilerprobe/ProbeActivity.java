@@ -53,6 +53,9 @@ public final class ProbeActivity extends Activity {
 
     private void command(String tool, String... args) throws Exception {
         List<String> argv = new ArrayList<>();
+        // Toybox reports per-process peak RSS via wait4, including compiler startup.
+        argv.add("/system/bin/time");
+        argv.add("-v");
         argv.add(new File(getApplicationInfo().nativeLibraryDir, "libprobe_" + tool + ".so").getPath());
         argv.addAll(Arrays.asList(args));
         ProcessBuilder builder = new ProcessBuilder(argv).directory(getFilesDir()).redirectErrorStream(true);
@@ -85,18 +88,24 @@ public final class ProbeActivity extends Activity {
 
     private void runProbe() throws Exception {
         Files.deleteIfExists(new File(getFilesDir(), "result.txt").toPath());
-        log("Android " + android.os.Build.VERSION.SDK_INT + "; tools: " + getApplicationInfo().nativeLibraryDir);
+        String abi = android.os.Build.SUPPORTED_ABIS[0];
+        boolean arm64 = abi.equals("arm64-v8a");
+        if (!arm64 && !abi.equals("x86_64")) throw new IllegalStateException("Unsupported ABI: " + abi);
+        String triple = arm64 ? "aarch64-linux-android30" : "x86_64-linux-android30";
+        int machine = arm64 ? 183 : 62;
+        log("Android " + android.os.Build.VERSION.SDK_INT + "; ABI: " + abi
+                + "; tools: " + getApplicationInfo().nativeLibraryDir);
         command("clang", "--version");
         // Invoke cc1 directly: no desktop sysroot, resource headers, driver subprocesses or CRT needed.
         Files.write(new File(getFilesDir(), "tiny.cpp").toPath(),
                 "extern \"C\" int probe_answer(int value) { return value + 7; }\n".getBytes(StandardCharsets.UTF_8));
-        command("clang", "-cc1", "-triple", "x86_64-linux-android30", "-emit-obj", "-O2",
+        command("clang", "-cc1", "-triple", triple, "-emit-obj", "-O2",
                 "-mrelocation-model", "pic", "-o", "tiny.o", "tiny.cpp");
-        elf("tiny.o", 1, 62);
+        elf("tiny.o", 1, machine);
         command("lld", "-flavor", "gnu", "-shared", "-z", "max-page-size=16384",
                 "-z", "noexecstack", "-z", "now", "-z", "relro", "--no-undefined",
                 "-soname", "libtiny.so", "tiny.o", "-o", "libtiny.so");
-        elf("libtiny.so", 3, 62);
+        elf("libtiny.so", 3, machine);
         int answer = checkLibrary(new File(getFilesDir(), "libtiny.so").getPath());
         if (answer != 42) throw new IllegalStateException("Loaded function returned " + answer);
         log("dlopen/dlsym/call: 42 (expected)");
