@@ -25,6 +25,7 @@ public class SetupActivity extends Activity {
     private static final int PICK_ZIP = 1;
     private TextView status;
     private Button select;
+    private Button folder;
     private ProgressBar progress;
     private Thread worker;
     private boolean picking;
@@ -47,8 +48,9 @@ public class SetupActivity extends Activity {
         layout.addView(title);
         TextView instructions = new TextView(this);
         instructions.setText(supportsLocalCompilation()
-            ? "Import an assets-only ZIP from your own supported USA Xbox game.\n\n"
-                + "ZIP root: assets/default.xbe, assets/Default/ and assets/Media/\n\n"
+            ? "Import your own supported USA Xbox game: ISO/XISO, ZIP, 7z, RAR or TAR, "
+                + "or select an extracted game folder containing default.xbe, Default/ and Media/.\n\n"
+                + "Archives may contain one ISO or one extracted game folder. Encrypted and split archives are not supported.\n\n"
                 + "Compilation runs on this device and may take several minutes. Keep this screen open. "
                 + "Back cancels; completed compiler work can be resumed. A matching prebuilt-library ZIP also works. "
                 + "Saves and settings will not be changed. Gameplay requires a controller."
@@ -61,12 +63,25 @@ public class SetupActivity extends Activity {
         instructions.setPadding(0, padding, 0, padding);
         layout.addView(instructions);
         select = new Button(this);
-        select.setText(pendingBuild(files) ? "Compile / resume" : "Import game ZIP");
+        select.setText(pendingBuild(files) ? "Compile / resume" : importLabel());
         select.setOnClickListener(view -> {
             if (pendingBuild(getExternalFilesDir(null))) importZip(null);
             else pickZip();
         });
         layout.addView(select);
+        if (supportsLocalCompilation()) {
+            folder = new Button(this);
+            folder.setText("Import extracted game folder");
+            folder.setOnClickListener(view -> pickFolder());
+            folder.setVisibility(pendingBuild(files) ? android.view.View.GONE : android.view.View.VISIBLE);
+            layout.addView(folder);
+            TextView licenses = new TextView(this);
+            licenses.setText("ISO support: extract-xiso. This product includes software developed by in <in@fishtank.com>.\nOpen import-tool licenses");
+            licenses.setPadding(0, padding / 2, 0, padding / 2);
+            licenses.setFocusable(true);
+            licenses.setOnClickListener(view -> showImportLicenses());
+            layout.addView(licenses);
+        }
         progress = new ProgressBar(this);
         progress.setVisibility(android.view.View.GONE);
         layout.addView(progress);
@@ -79,16 +94,40 @@ public class SetupActivity extends Activity {
         scroll.addView(layout);
         setContentView(scroll);
         picking = state != null && state.getBoolean("picking");
-        select.setEnabled(!picking && files != null);
+        setSelectionEnabled(!picking && files != null);
         if (files == null) status.setText("App storage is unavailable. Check storage and restart SCDA.");
         else if (state != null && state.getBoolean("importing"))
-            status.setText("The previous import was interrupted. Select the ZIP again to retry.");
+            status.setText("The previous import was interrupted. Select the input again to retry.");
         select.requestFocus();
     }
 
     // Experimental setup opts in without changing release/Windows-builder import behavior.
     protected boolean supportsLocalCompilation() { return false; }
+    protected void showImportLicenses() {}
     protected void compileGame(File files, GameImport.Progress progress) throws IOException {}
+    protected void importSource(Uri uri, File files, int machine, GameImport.Progress update) throws IOException {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("Cannot open the selected ZIP.");
+            GameImport.extract(input, files, machine, supportsLocalCompilation(), update);
+        }
+    }
+
+    private String importLabel() { return supportsLocalCompilation() ? "Import game file (ISO / archive)" : "Import game ZIP"; }
+    private void setSelectionEnabled(boolean enabled) {
+        select.setEnabled(enabled);
+        if (folder != null) folder.setEnabled(enabled);
+    }
+    private void pickFolder() {
+        try {
+            picking = true;
+            setSelectionEnabled(false);
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 2);
+        } catch (ActivityNotFoundException e) {
+            picking = false;
+            setSelectionEnabled(true);
+            status.setText("No system folder picker is available on this device.");
+        }
+    }
 
     private boolean pendingBuild(File files) {
         return supportsLocalCompilation() && files != null
@@ -111,36 +150,35 @@ public class SetupActivity extends Activity {
         intent.setType("*/*");
         try {
             picking = true;
-            select.setEnabled(false);
+            setSelectionEnabled(false);
             startActivityForResult(intent, PICK_ZIP);
         } catch (ActivityNotFoundException e) {
             picking = false;
-            select.setEnabled(true);
+            setSelectionEnabled(true);
             status.setText("No system file picker is available on this device.");
         }
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != PICK_ZIP) return;
+        if (request != PICK_ZIP && !(request == 2 && supportsLocalCompilation())) return;
         picking = false;
-        select.setEnabled(true);
+        setSelectionEnabled(true);
         if (result != RESULT_OK || data == null || data.getData() == null) {
-            status.setText("No ZIP selected. You can try again.");
+            status.setText("No input selected. You can try again.");
             return;
         }
         importZip(data.getData());
     }
 
     protected void importZip(Uri uri) {
-        select.setEnabled(false);
+        setSelectionEnabled(false);
         progress.setVisibility(android.view.View.VISIBLE);
-        status.setText("Opening ZIP…");
+        status.setText("Opening input…");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         worker = new Thread(() -> {
             String error = null;
-            try (InputStream input = uri == null ? null : getContentResolver().openInputStream(uri)) {
-                if (uri != null && input == null) throw new IOException("Cannot open the selected ZIP.");
+            try {
                 File files = getExternalFilesDir(null);
                 if (files == null) throw new IOException("App storage is unavailable.");
                 // The setup and native runtime execute in the same ABI/process.
@@ -155,7 +193,7 @@ public class SetupActivity extends Activity {
                         if (!isDestroyed()) status.setText(text);
                     });
                 };
-                if (input != null) GameImport.extract(input, files, machine, supportsLocalCompilation(), update);
+                if (uri != null) importSource(uri, files, machine, update);
                 if (pendingBuild(files)) compileGame(files, update);
             } catch (IOException | RuntimeException e) {
                 error = e.getMessage() != null ? e.getMessage() : e.toString();
@@ -170,12 +208,14 @@ public class SetupActivity extends Activity {
                 if (failure == null) launchGame();
                 else {
                     status.setText("Setup stopped: " + failure + "\n\nYour saves and settings were not changed. Retry or resume below.");
-                    select.setText(pendingBuild(getExternalFilesDir(null)) ? "Compile / resume" : "Import game ZIP");
-                    select.setEnabled(true);
+                    boolean pending = pendingBuild(getExternalFilesDir(null));
+                    select.setText(pending ? "Compile / resume" : importLabel());
+                    if (folder != null) folder.setVisibility(pending ? android.view.View.GONE : android.view.View.VISIBLE);
+                    setSelectionEnabled(true);
                     select.requestFocus();
                 }
             });
-        }, "SCDA ZIP import");
+        }, "SCDA game import");
         worker.start();
     }
 

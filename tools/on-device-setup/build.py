@@ -14,6 +14,7 @@ WORK = ROOT / 'out/on-device-setup'
 PROBE = ROOT / 'tools/on-device-probe'
 sys.path.insert(0, str(PROBE))
 import prepare
+import import_tools
 
 
 def main():
@@ -62,6 +63,7 @@ def main():
     for name in ('x86_context.h', 'x86_ops.h'):
         shutil.copy2(ROOT / 'src/cpu' / name, assets / 'input/cpu' / name)
     shutil.copytree(ROOT / 'src/cpu/freestanding', assets / 'input/cpu/freestanding')
+    import_tools.stage(sdk, 'arm64-v8a', dest, WORK / 'assets')
     policy = (PROBE / 'src/main/java/io/github/mogeldev/scda/compilerprobe/BuildJobs.java').read_text()
     java = WORK / 'policy/io/github/mogeldev/scda/BuildJobs.java'
     java.parent.mkdir(parents=True, exist_ok=True)
