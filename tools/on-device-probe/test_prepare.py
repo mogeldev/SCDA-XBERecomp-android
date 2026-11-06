@@ -39,6 +39,9 @@ class PrepareTest(unittest.TestCase):
         self.assertEqual(relocated[301:310], b'libtz.so\0')
         self.assertEqual(relocated[311:319], b'$ORIGIN\0')
         self.assertEqual(prepare.relocate_elf(relocated), relocated)
+        custom = prepare.relocate_elf(data, {'libz.so.1': 'libcz.so'})
+        self.assertEqual(custom[301:310], b'libcz.so\0')
+        self.assertEqual(len(custom), len(data))
 
     def test_reject_non_elf64(self):
         with self.assertRaises(ValueError):

@@ -38,6 +38,10 @@ final class GameImport {
     }
 
     static void extract(InputStream input, File files, int machine, Progress progress) throws IOException {
+        extract(input, files, machine, false, progress);
+    }
+
+    static void extract(InputStream input, File files, int machine, boolean allowAssetsOnly, Progress progress) throws IOException {
         Files.createDirectories(files.toPath());
         // Also prevents a new setup Activity from deleting a previous worker's staging directory.
         try (FileChannel channel = FileChannel.open(new File(files, ".game-import.lock").toPath(),
@@ -56,7 +60,7 @@ final class GameImport {
                 deleteTree(stage);
                 Files.createDirectory(stage);
                 try {
-                    unpack(input, stage, machine, progress);
+                    unpack(input, stage, machine, allowAssetsOnly, progress);
                     // One rename publishes both assets and code; an interrupted import is never considered installed.
                     try {
                         Files.move(stage, target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
@@ -70,7 +74,7 @@ final class GameImport {
         }
     }
 
-    private static void unpack(InputStream input, Path stage, int machine, Progress progress) throws IOException {
+    private static void unpack(InputStream input, Path stage, int machine, boolean allowAssetsOnly, Progress progress) throws IOException {
         Set<String> names = new HashSet<>();
         byte[] buffer = new byte[256 * 1024];
         long total = 0, spaceCheck = 0;
@@ -117,6 +121,25 @@ final class GameImport {
         byte[] xbe = header(stage.resolve("assets/default.xbe"), 4);
         if (xbe[0] != 'X' || xbe[1] != 'B' || xbe[2] != 'E' || xbe[3] != 'H')
             throw new IOException("default.xbe is not an Xbox executable.");
+        if (allowAssetsOnly && !Files.exists(stage.resolve("libscda_code.so"))) {
+            try {
+                java.security.MessageDigest hash = java.security.MessageDigest.getInstance("SHA-1");
+                try (InputStream xbeInput = Files.newInputStream(stage.resolve("assets/default.xbe"))) {
+                    int count;
+                    while ((count = xbeInput.read(buffer)) != -1) {
+                        interrupted();
+                        hash.update(buffer, 0, count);
+                    }
+                }
+                StringBuilder hex = new StringBuilder();
+                for (byte value : hash.digest()) hex.append(String.format(Locale.ROOT, "%02x", value & 255));
+                if (!hex.toString().equals("91290baf93c2f6ae735a3106c48734665c826d84"))
+                    throw new IOException("On-device compilation requires the supported unmodified USA default.xbe.");
+            } catch (java.security.NoSuchAlgorithmException e) { throw new IOException(e); }
+            interrupted();
+            progress.update("Assets imported; ready to compile", total);
+            return;
+        }
         byte[] elf = header(stage.resolve("libscda_code.so"), 20);
         int type = (elf[16] & 255) | ((elf[17] & 255) << 8);
         int arch = (elf[18] & 255) | ((elf[19] & 255) << 8);
