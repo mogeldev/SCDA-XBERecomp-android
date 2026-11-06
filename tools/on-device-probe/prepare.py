@@ -41,6 +41,36 @@ def fetch(package):
     return archive
 
 
+SUPPORTED_XBE_SHA1 = '91290baf93c2f6ae735a3106c48734665c826d84'
+
+
+def validate_xbe(path):
+    if hashlib.sha1(path.read_bytes()).hexdigest() != SUPPORTED_XBE_SHA1:
+        raise ValueError('Unsupported default.xbe; use the validated unmodified USA retail image')
+
+
+def stage_inputs():
+    xbe = ROOT / 'assets/default.xbe'
+    validate_xbe(xbe)
+    inputs = WORK / 'input'
+    if inputs.exists():
+        shutil.rmtree(inputs)
+    inputs.mkdir(parents=True)
+    shutil.copy2(xbe, inputs / 'default.xbe')
+    for name in ('scda_v2.toml', 'xdk_symbols.toml'):
+        (inputs / 'config').mkdir(exist_ok=True)
+        shutil.copy2(ROOT / 'config' / name, inputs / 'config' / name)
+    shutil.copytree(ROOT / 'src/cpu', inputs / 'cpu')
+    # Reference hashes only, never pre-generated C++: verify all translator outputs against Windows.
+    generated = ROOT / 'generated/game'
+    names = [f'x86_recomp.{i}.cpp' for i in range(128)] + [
+        'x86_recomp_shared.h', 'x86_func_mapping.cpp', 'image_symbols.h',
+        'exports.def', 'imports.def', 'x86_recomp_stats.txt']
+    expected = {name: hashlib.sha256((generated / name).read_bytes()).hexdigest() for name in names}
+    (inputs / 'expected.json').write_text(json.dumps(expected, indent=2) + '\n')
+    return inputs
+
+
 # APK native libraries must end in .so. Keep replacements no longer than originals.
 RENAMES = {'libz.so.1': 'libtz.so', 'libzstd.so.1': 'libzstd.so', 'libxml2.so.16': 'libxml2.so'}
 KEEP = {'libLLVM.so', 'libclang-cpp.so', 'libc++_shared.so', 'libffi.so',
@@ -109,13 +139,8 @@ def main(abi='x86_64'):
     missing = (KEEP | {'libprobe_clang.so', 'libprobe_lld.so'}) - {p.name for p in dest.iterdir()}
     if missing:
         raise ValueError(f'Missing compiler libraries: {sorted(missing)}')
-    # Copy private input only into the work directory; adb sends it separately.
-    source = ROOT / 'generated/game/x86_recomp.0.cpp'
-    inputs = WORK / 'input'
-    inputs.mkdir(exist_ok=True)
-    shutil.copy2(source, inputs / source.name)
-    shutil.copy2(ROOT / 'generated/game/x86_recomp_shared.h', inputs)
-    shutil.copytree(ROOT / 'src/cpu', inputs / 'cpu', dirs_exist_ok=True)
+    # Copy private XBE/reference hashes only into work; adb sends them separately.
+    inputs = stage_inputs()
     print(f'Compiler files: {dest}\nPrivate test input: {inputs}')
 
 

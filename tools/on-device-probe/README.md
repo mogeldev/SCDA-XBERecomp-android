@@ -9,18 +9,21 @@ Inside an ordinary Android app process, targeting API 36:
 1. Execute Android-native Clang and LLD **from the APK's installed native-library directory**.
 2. Compile a tiny C++ function to a native object (x86-64 on the emulator, ARM64 on the phone) and link a shared library in private app storage.
 3. `dlopen` that library, resolve its function, and assert `probe_answer(35) == 42`.
-4. Compile the player's existing `generated/game/x86_recomp.0.cpp` at `-O2` to ARM64.
-5. Link a **partial** ARM64 game library and validate ELF class, object/shared-library type and machine architecture. It deliberately retains unresolved host/other-partition symbols and is **not loadable game code**.
+4. Validate the imported `default.xbe` SHA-1, then run the actual XBE translator on Android to produce all 128 C++ partitions and supporting files. All **134 outputs** must match SHA-256 references from the Windows translator.
+5. Compile the **newly generated on-device** `x86_recomp.0.cpp` at `-O2` to ARM64.
+6. Link a **partial** ARM64 game library and validate ELF class, object/shared-library type and machine architecture. It deliberately retains unresolved host/other-partition symbols and is **not loadable game code**.
 
 The compiler/linker are PIE executables packaged under `libprobe_*.so` names, not shared libraries loaded via JNI. Android extracts them at install time using legacy native-library packaging. This avoids executing a binary from writable app storage, without root or lowering the target SDK. Only the small `libprobe.so` loader uses JNI.
 
 Uses pinned, SHA-256-verified Android x86-64 or ARM64 LLVM 21.1.8 packages from [Termux](https://packages.termux.dev/apt/termux-main/). `packages.json` pins x86-64; `packages-arm64-v8a.json` pins ARM64. `prepare.py` checks the compiler ELF architecture and relocates dependency names and RUNPATH to the APK directory. In particular the bundled versioned zlib is renamed to avoid Android's system `libz.so`. No Termux installation, package scripts, system modifications, SDK sysroot or runtime network access are needed. `clang -cc1` avoids driver subprocess/path assumptions and uses the project's freestanding headers.
 
+The XBE translator is built from the existing `tools/recomp/*.cpp` sources, unchanged, through `recompiler/CMakeLists.txt`. It uses the same Zydis v4.1.1 and tomlplusplus v3.4.0 tags as the Windows builder. The runner cross-compiles it with the NDK as a static-libc++ PIE (`libprobe_recomp.so`) before building the APK. A separate build keeps the translator's NDK runtime from replacing the Termux compiler's newer shared libc++. Translation runs as an isolated subprocess with measured peak RSS; errors stop the pipeline. Each translation starts in a fresh output directory so stale outputs cannot pass reference checks.
+
 **Developer experiment only. Do not publish this APK.** Before shipping a compiler, review upstream sources/build provenance, licenses/notices (LLVM and all bundled dependencies, including libiconv), security updates, package size, 16-KB page compatibility, and distribution policy. Pinned package URLs may eventually expire. This is not yet the production compiler supply chain.
 
 ## Run
 
-Requires the same JDK 21, Android SDK 36, NDK 29.0.14206865 and CMake 3.31.6 as the game build, plus Python 3 with HTTPS access. You must already have privately generated the game sources using the current Windows recompiler. They are sent separately to the device and **never embedded in this test APK**.
+Requires the same JDK 21, Android SDK 36, NDK 29.0.14206865 and CMake 3.31.6 as the game build, plus Python 3 and Git with HTTPS access. Place the validated USA retail `default.xbe` in `assets/`. You must also have privately generated `generated/game/` with the current Windows recompiler **only as a test oracle**: the runner sends reference hashes, not those generated sources. The device receives the XBE, two configs, CPU headers and reference hashes separately via ADB. **Neither the XBE nor generated game code is embedded in the APK.**
 
 From the repository root:
 
@@ -48,7 +51,7 @@ Keep the phone unlocked and the prototype in the foreground until `PASS` appears
 
 `--sdk` defaults to `ANDROID_HOME`. The runner downloads compiler packages into `out/on-device-probe/`, builds/installs only the test APK, streams private inputs directly into the debug app's internal storage via `run-as`, verifies every transferred file with SHA-256, and waits for `PASS`. Raw `adb exec-in` avoids OEM shell corruption of binary input; verification waits for asynchronous extraction to finish. No shared-storage staging or `adb root` is used. Re-running replaces prototype outputs, not the game installation.
 
-Compilation is one command at a time with a 180-second timeout per command. Android's `/system/bin/time -v` records per-process peak RSS and elapsed/user/system time alongside the app's wall time. RSS includes mapped compiler libraries, not the Java app or total system memory, and must not be extrapolated to parallel/full-game builds.
+Translation/compilation is one command at a time with a 300-second timeout per command. Android's `/system/bin/time -v` records per-process peak RSS and elapsed/user/system time alongside the app's wall time. RSS includes mapped compiler libraries, not the Java app or total system memory, and must not be extrapolated to parallel/full-game builds.
 
 Outputs:
 
@@ -73,16 +76,17 @@ Both targets use target SDK 36 and normal app privileges, without root:
 |---|---|---|
 | Packaged Clang and LLD execute under app UID | PASS | PASS |
 | Native tiny compile / link / load / call | PASS; returns 42 | PASS; returns 42 |
-| Actual generated partition → ARM64 object | PASS; about 4.5 seconds | PASS; about 8.0 seconds |
+| XBE → all generated C++/support files | PASS; about 5.6 seconds | PASS; about 7.3 seconds |
+| All 134 outputs vs. Windows SHA-256 references | PASS; byte-identical | PASS; byte-identical |
+| On-device-generated partition → ARM64 object | PASS; about 4.3 seconds | PASS; about 7.9 seconds |
 | Partial ARM64 library link | PASS; about 0.1 seconds | PASS; about 0.1 seconds |
 
-The phone is the Xiaomi Redmi Note 13 Pro 5G (Snapdragon 7s Gen 2), accessed through wireless ADB. The generated partition compiler process peaked at **258,352 KiB RSS (about 252 MiB)**; the linker at **62,456 KiB (about 61 MiB)**. Both devices produced a 226,576-byte ARM64 object and a 248,872-byte partial shared library. These are single-partition measurements, not full-game setup estimates. Six host unit tests cover the ELF relocation/archive helpers and both package manifests/ABI selection.
+The phone is the Xiaomi Redmi Note 13 Pro 5G (Snapdragon 7s Gen 2), accessed through wireless ADB. The translator process peaked at **137,884 KiB RSS (about 135 MiB)**; the generated partition compiler at **257,096 KiB (about 251 MiB)**; the linker at **62,536 KiB (about 61 MiB)**. The translator identified 33,172 functions. Both devices produced a 226,576-byte ARM64 object and a 248,872-byte partial shared library. Compilation timings cover one partition only, not full-game setup. Eight host unit tests cover ELF/archive helpers, both package manifests/ABI selection, XBE rejection and staging only hashes rather than generated sources.
 
 The ARM64 prototype APK is about **72 MiB** compressed; the x86-64 APK is roughly 76 MB, with roughly 206 MiB of staged compiler executables/libraries. Neither is size-optimized. The standalone project's `gradle.properties` gives Gradle a 2-GiB heap for packaging these large libraries. Only 4-KiB-page devices have been tested.
 
 ## Still unproven / next step
 
-- Porting/invoking `xbe_recomp` inside Android; this experiment uses pre-generated private C++.
 - Full 129-source compilation, final host linkage, loading actual game code, gameplay, total/parallel peak RAM, battery/thermal cost and setup duration.
 - API 30 and 16-KB-page devices.
 - Compiler flags are passed to the internal `-cc1` interface, which must be kept in sync with the pinned compiler. This is not a stable public driver API.
