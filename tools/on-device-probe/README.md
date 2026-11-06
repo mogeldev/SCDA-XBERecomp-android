@@ -131,7 +131,7 @@ A fresh end-to-end phone run then repeated XBE translation (all 134 hashes match
 
 ## Still unproven / next step
 
-- Calling game code / gameplay, a load inside the actual SDL game process, total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
+- See [`../on-device-gameplay/README.md`](../on-device-gameplay/README.md) for the separately installed SDL game-process test: phone-built code now boots/render/audio-initializes there. Mission gameplay, save/load and transitions remain unvalidated, as do total/parallel peak RAM, repeatable battery/thermal measurements and complete user-facing setup duration.
 - API 30 and 16-KB-page devices.
 - Compiler flags are passed to the internal `-cc1` interface, which must be kept in sync with the pinned compiler. This is not a stable public driver API.
 - No production UI, ISO importer, resume/cancellation workflow or importer changes. Keep the Windows builder as the working alternative.
