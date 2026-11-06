@@ -13,7 +13,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = '0.1'
-        ndk { abiFilters 'x86_64' }
+        ndk { abiFilters(project.findProperty('abi') ?: 'x86_64') }
         externalNativeBuild.cmake.arguments '-DANDROID_STL=none'
     }
     sourceSets.main.jniLibs.srcDirs = ['../../out/on-device-probe/jniLibs']

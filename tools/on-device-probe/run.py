@@ -1,5 +1,6 @@
-"""Build and run the isolated compiler probe on an explicitly selected emulator."""
+"""Build and run the isolated compiler probe on a selected emulator or opted-in phone."""
 import argparse
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -15,7 +16,8 @@ PACKAGE = 'io.github.mogeldev.scda.compilerprobe'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', default=os.environ.get('ANDROID_HOME'), help='Android SDK path')
-    parser.add_argument('--serial', default='emulator-5554', help='x86-64 emulator adb serial')
+    parser.add_argument('--serial', default='emulator-5554', help='Target adb serial (Wi-Fi IP:port is supported)')
+    parser.add_argument('--allow-phone', action='store_true', help='Allow installation of the separate probe APK on a phone')
     args = parser.parse_args()
     sdk = Path(args.sdk or '').resolve()
     adb = sdk / 'platform-tools/adb.exe'
@@ -28,12 +30,15 @@ def main():
     def prop(name):
         return device('shell', 'getprop', name, capture_output=True, text=True).stdout.strip()
 
-    if prop('ro.kernel.qemu') != '1' or prop('ro.product.cpu.abi') != 'x86_64':
-        parser.error('This prototype only installs on an x86-64 Android emulator; no phone changes allowed')
-    prepare.main()
+    abi = prop('ro.product.cpu.abi')
+    if abi not in ('x86_64', 'arm64-v8a'):
+        parser.error(f'Unsupported device ABI: {abi}')
+    if prop('ro.kernel.qemu') != '1' and not args.allow_phone:
+        parser.error('Physical device: pass --allow-phone to install only the separate compiler-probe APK')
+    prepare.main(abi)
     env = dict(os.environ, ANDROID_HOME=str(sdk), ANDROID_SDK_ROOT=str(sdk))
     subprocess.run([str(prepare.ROOT / 'android/gradlew.bat'), '-p', str(prepare.HERE),
-                    '--project-cache-dir', str(prepare.WORK / 'gradle'), 'assembleDebug'],
+                    '--project-cache-dir', str(prepare.WORK / 'gradle'), f'-Pabi={abi}', 'assembleDebug'],
                    env=env, check=True)
     apk = prepare.WORK / 'build/outputs/apk/debug/scda-compiler-probe-debug.apk'
     device('install', '-r', str(apk))
@@ -42,11 +47,25 @@ def main():
     device('shell', 'run-as', PACKAGE, 'rm', '-f', 'files/result.txt')
     # Stream private sources directly into app storage, never into shared /sdcard or /data/local/tmp.
     archive = io.BytesIO()
-    with tarfile.open(fileobj=archive, mode='w') as tar:
+    digests = {}
+    with tarfile.open(fileobj=archive, mode='w', format=tarfile.USTAR_FORMAT) as tar:
         for path in sorted((prepare.WORK / 'input').rglob('*')):
             if path.is_file():
-                tar.add(path, arcname=path.relative_to(prepare.WORK / 'input').as_posix())
-    device('shell', '-T', 'run-as', PACKAGE, 'tar', '-xf', '-', '-C', 'files/input', input=archive.getvalue())
+                name = path.relative_to(prepare.WORK / 'input').as_posix()
+                digests['files/input/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
+                tar.add(path, arcname=name)
+    # exec-in is binary-safe; OEM shell -T may corrupt tar. Extraction can finish after adb exits.
+    device('exec-in', 'run-as', PACKAGE, 'tar', '-xf', '-', '-C', 'files/input', input=archive.getvalue())
+    transfer_deadline = time.monotonic() + 30
+    while True:
+        copied = subprocess.run([str(adb), '-s', args.serial, 'shell', 'run-as', PACKAGE,
+                                 'sha256sum', *digests], capture_output=True, text=True)
+        actual = {name: digest for digest, name in (line.split() for line in copied.stdout.splitlines())}
+        if actual == digests:
+            break
+        if time.monotonic() >= transfer_deadline:
+            raise SystemExit('Private input transfer failed SHA-256 validation; probe not started')
+        time.sleep(1)
     device('shell', 'am', 'start', '-n', PACKAGE + '/.ProbeActivity')
     deadline = time.monotonic() + 420
     while time.monotonic() < deadline:
@@ -55,6 +74,7 @@ def main():
         if result.returncode == 0:
             print(result.stdout)
             (prepare.WORK / 'result.txt').write_text(result.stdout)
+            (prepare.WORK / f'result-{abi}.txt').write_text(result.stdout)
             if not result.stdout.rstrip().endswith('\nPASS'):
                 raise SystemExit('Compiler probe failed; see out/on-device-probe/result.txt')
             return

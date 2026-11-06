@@ -1,3 +1,4 @@
+import json
 import struct
 import unittest
 
@@ -38,6 +39,21 @@ class PrepareTest(unittest.TestCase):
     def test_reject_non_elf64(self):
         with self.assertRaises(ValueError):
             prepare.relocate_elf(b'not an ELF')
+
+    def test_pinned_packages_match_host_architecture(self):
+        expected = {'clang', 'lld', 'libllvm', 'libc++', 'libffi', 'libiconv', 'libxml2', 'zlib', 'zstd'}
+        for manifest, arch in [('packages.json', 'x86_64'), ('packages-arm64-v8a.json', 'aarch64')]:
+            with self.subTest(architecture=arch):
+                packages = json.loads((prepare.HERE / manifest).read_text())
+                self.assertEqual({p['name'] for p in packages}, expected)
+                self.assertEqual(len(packages), len(expected))
+                for package in packages:
+                    self.assertTrue(package['path'].endswith('_' + arch + '.deb'))
+                    self.assertEqual(len(bytes.fromhex(package['sha256'])), 32)
+
+    def test_reject_unsupported_abi_before_staging(self):
+        with self.assertRaisesRegex(ValueError, 'Unsupported ABI'):
+            prepare.main('armeabi-v7a')
 
 
 if __name__ == '__main__':
