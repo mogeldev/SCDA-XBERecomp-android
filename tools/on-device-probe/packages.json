@@ -1,0 +1,56 @@
+[
+  {
+    "name": "clang",
+    "version": "21.1.8-3",
+    "path": "pool/main/c/clang/clang_21.1.8-3_x86_64.deb",
+    "sha256": "923616704b12bce7679b6b41b7c4a6655823fc67cc99c020ddf9ea5721ac4ee0"
+  },
+  {
+    "name": "libc++",
+    "version": "30",
+    "path": "pool/main/libc/libc++/libc++_30_x86_64.deb",
+    "sha256": "c9bcd9a8067a19c9c0e4893a72d314a2e37d6b67ce8dd05c67b9bbacad044b4f"
+  },
+  {
+    "name": "libffi",
+    "version": "3.8.0",
+    "path": "pool/main/libf/libffi/libffi_3.8.0_x86_64.deb",
+    "sha256": "59121ca4bc5f5735d7bb603bd99548983064e8fde97d236e97122cb87d3452a3"
+  },
+  {
+    "name": "libiconv",
+    "version": "1.19.1",
+    "path": "pool/main/libi/libiconv/libiconv_1.19.1_x86_64.deb",
+    "sha256": "3eb0c454676ad24d26c79601721b2eb3f9485c611ad0179fb86b17229344f46d"
+  },
+  {
+    "name": "libllvm",
+    "version": "21.1.8-3",
+    "path": "pool/main/libl/libllvm/libllvm_21.1.8-3_x86_64.deb",
+    "sha256": "4b3bc509e727fc41c45682795129f29922b6f931e7391b6b287bd4c14bccdd7a"
+  },
+  {
+    "name": "libxml2",
+    "version": "2.15.4-1",
+    "path": "pool/main/libx/libxml2/libxml2_2.15.4-1_x86_64.deb",
+    "sha256": "b25b5b18185b4d9f61fc63d2d8ec11fadb5755b42e01c6afef9f5ad2abd6fb78"
+  },
+  {
+    "name": "lld",
+    "version": "21.1.8-3",
+    "path": "pool/main/l/lld/lld_21.1.8-3_x86_64.deb",
+    "sha256": "970ea37e44d0b398dca785ef276bbf35a6e0993ef6700e11f15df599c06358cd"
+  },
+  {
+    "name": "zlib",
+    "version": "1.4",
+    "path": "pool/main/z/zlib/zlib_1.4_x86_64.deb",
+    "sha256": "55ab8f16e492d6ed03c2e2bf701af52cf54a313442dd7adedd3d6f3e3eba2e4f"
+  },
+  {
+    "name": "zstd",
+    "version": "1.5.7-1",
+    "path": "pool/main/z/zstd/zstd_1.5.7-1_x86_64.deb",
+    "sha256": "a76ba6c3d8742819bf4fff7780eb2e022269412700fc8f4471f530cc0d81833f"
+  }
+]

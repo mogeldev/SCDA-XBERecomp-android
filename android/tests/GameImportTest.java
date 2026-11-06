@@ -149,6 +149,31 @@ public final class GameImportTest {
             Path x64 = Files.createDirectory(root.resolve("x64"));
             GameImport.extract(new ByteArrayInputStream(zip(game(62))), x64.toFile(), 62, (name, bytes) -> {});
             check(GameImport.isInstalled(x64.toFile()), "x86_64 emulator import failed");
+            // Opt-in local compilation still accepts prebuilt ZIPs and rejects unsupported assets-only images.
+            Path localPrebuilt = Files.createDirectory(root.resolve("local-prebuilt"));
+            GameImport.extract(new ByteArrayInputStream(valid), localPrebuilt.toFile(), 183, true, (name, bytes) -> {});
+            check(GameImport.isInstalled(localPrebuilt.toFile()), "Local setup broke prebuilt ZIP");
+            Map<String, byte[]> onlyAssets = game(183);
+            onlyAssets.remove("libscda_code.so");
+            Path unsupported = Files.createDirectory(root.resolve("unsupported-local"));
+            try {
+                GameImport.extract(new ByteArrayInputStream(zip(onlyAssets)), unsupported.toFile(), 183, true, (name, bytes) -> {});
+                throw new AssertionError("Accepted unsupported local XBE");
+            } catch (IOException expected) {
+                check(expected.getMessage().contains("supported unmodified USA"), "Wrong local XBE error");
+                check(!Files.exists(unsupported.resolve("game")), "Published unsupported local assets");
+                check(!Files.exists(unsupported.resolve(".game-import")), "Local staging remains");
+            }
+            if (args.length == 2 && args[0].equals("--assets-only")) {
+                Path actualLocal = Files.createDirectory(root.resolve("actual local assets"));
+                try (java.io.InputStream input = Files.newInputStream(Path.of(args[1]))) {
+                    GameImport.extract(input, actualLocal.toFile(), 183, true, (name, bytes) -> {});
+                }
+                check(GameImport.hasAssets(actualLocal.resolve("game/assets").toFile()), "Local assets not published");
+                check(!GameImport.isInstalled(actualLocal.toFile()), "Assets-only marked ready before compilation");
+                check(!Files.exists(actualLocal.resolve("game/libscda_code.so")), "Invented code library");
+                System.out.println("PASS: supported assets-only ZIP imported; awaits compilation");
+            }
             if (args.length == 1) {
                 Path actual = Files.createDirectory(root.resolve("actual game"));
                 try (java.io.InputStream input = Files.newInputStream(Path.of(args[0]))) {

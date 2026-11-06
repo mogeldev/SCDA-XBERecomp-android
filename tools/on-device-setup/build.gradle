@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' version '9.4.1' }
+layout.buildDirectory = file('../../out/on-device-setup/build')
+android {
+    namespace = 'io.github.mogeldev.scda'
+    compileSdk = 36
+    defaultConfig {
+        applicationId = 'io.github.mogeldev.scda.localsetup'
+        minSdk = 30
+        targetSdk = 36
+        versionCode = 1
+        versionName = 'experimental-local-setup'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    sourceSets.main {
+        manifest.srcFile '../../android/src/main/AndroidManifest.xml'
+        java.srcDirs = ['../../android/src/main/java', 'src/main/java', '../../out/on-device-setup/policy']
+        assets.srcDirs = ['../../out/on-device-setup/assets']
+        jniLibs.srcDirs = ['../../out/on-device-setup/jniLibs']
+    }
+    sourceSets.debug.manifest.srcFile 'src/debug/AndroidManifest.xml'
+    packaging.jniLibs {
+        useLegacyPackaging = true
+        keepDebugSymbols += ['**/*.so']
+    }
+}
