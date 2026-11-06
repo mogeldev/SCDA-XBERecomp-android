@@ -52,6 +52,7 @@ def main():
     parser.add_argument('--serial', required=True)
     parser.add_argument('--allow-phone', action='store_true')
     parser.add_argument('--assets', type=Path, default=ROOT / 'assets')
+    parser.add_argument('--source', type=Path, help='Import this private ISO/archive instead of creating an assets-only ZIP')
     args = parser.parse_args()
     adb = args.sdk / 'platform-tools/adb.exe'
 
@@ -63,19 +64,22 @@ def main():
 
     if prop('ro.product.cpu.abi') != 'arm64-v8a': parser.error('ARM64 required')
     if prop('ro.kernel.qemu') != '1' and not args.allow_phone: parser.error('Pass --allow-phone for the separate setup test app')
-    xbe = args.assets / 'default.xbe'
-    if hashlib.sha1(xbe.read_bytes()).hexdigest() != '91290baf93c2f6ae735a3106c48734665c826d84':
-        parser.error('Unsupported default.xbe')
-    archive_path = WORK / 'assets-only.zip'
-    files = [xbe]
-    for name in ('Default', 'Media'):
-        children = sorted(p for p in (args.assets / name).rglob('*') if p.is_file())
-        if not children: parser.error('Missing campaign assets: ' + name)
-        files.extend(children)
-    with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_STORED) as archive:
-        for path in files:
-            if path.is_symlink(): raise ValueError('Refusing symlink: ' + str(path))
-            archive.write(path, 'assets/' + path.relative_to(args.assets).as_posix())
+    archive_path = args.source
+    if archive_path is None:
+        xbe = args.assets / 'default.xbe'
+        if hashlib.sha1(xbe.read_bytes()).hexdigest() != '91290baf93c2f6ae735a3106c48734665c826d84':
+            parser.error('Unsupported default.xbe')
+        archive_path = WORK / 'assets-only.zip'
+        files = [xbe]
+        for name in ('Default', 'Media'):
+            children = sorted(p for p in (args.assets / name).rglob('*') if p.is_file())
+            if not children: parser.error('Missing campaign assets: ' + name)
+            files.extend(children)
+        with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_STORED) as archive:
+            for path in files:
+                if path.is_symlink(): raise ValueError('Refusing symlink: ' + str(path))
+                archive.write(path, 'assets/' + path.relative_to(args.assets).as_posix())
+    if not archive_path.is_file(): parser.error('Missing input: ' + str(archive_path))
     device('install', '-r', str(WORK / 'build/outputs/apk/debug/scda-on-device-setup-debug.apk'))
     external = '/sdcard/Android/data/' + PACKAGE + '/files/game'
     exists = device('shell', f'test -d {external} && echo exists || true', capture_output=True, text=True)
@@ -85,7 +89,7 @@ def main():
     device('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'files')
     transfer_zip(device, archive_path)
     device('shell', 'am', 'start', '-n', COMPONENT, '--ez', 'test_import', 'true')
-    print('Assets-only ZIP transferred/verified. Keep setup foreground; Back cancels, Compile / resume reuses verified work.')
+    print('Private input transferred/verified. Keep setup foreground; Back cancels, Compile / resume reuses verified work.')
     print('Observe: adb -s SERIAL logcat -s SCDABuild SCDAImport AndroidRuntime')
 
 

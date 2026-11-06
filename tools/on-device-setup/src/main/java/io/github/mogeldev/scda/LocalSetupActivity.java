@@ -22,6 +22,29 @@ import java.util.concurrent.TimeUnit;
 public final class LocalSetupActivity extends SetupActivity {
     @Override protected boolean supportsLocalCompilation() { return true; }
 
+    @Override protected void showImportLicenses() {
+        StringBuilder text = new StringBuilder();
+        try {
+            String[] names = getAssets().list("licenses");
+            if (names == null) throw new IOException("Missing import-tool licenses");
+            for (String name : names) {
+                text.append("\n=== ").append(name).append(" ===\n");
+                try (java.io.Reader reader = new java.io.InputStreamReader(getAssets().open("licenses/" + name), StandardCharsets.UTF_8)) {
+                    char[] buffer = new char[4096];
+                    int count;
+                    while ((count = reader.read(buffer)) != -1) text.append(buffer, 0, count);
+                }
+            }
+        } catch (IOException e) { text.append(e.getMessage()); }
+        android.widget.TextView content = new android.widget.TextView(this);
+        content.setText(text);
+        content.setTextIsSelectable(true);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(content);
+        new android.app.AlertDialog.Builder(this).setTitle("Import-tool licenses").setView(scroll)
+            .setPositiveButton("Close", null).show();
+    }
+
     @Override protected void onCreate(android.os.Bundle state) {
         super.onCreate(state);
         // Debug-only adb entry uses the exact picker/import pipeline, never a prebuilt code transfer.
@@ -31,6 +54,61 @@ public final class LocalSetupActivity extends SetupActivity {
                 && new File(getFilesDir(), "test-assets.zip").isFile()) {
             importZip(android.net.Uri.fromFile(new File(getFilesDir(), "test-assets.zip")));
         }
+    }
+
+    @Override protected void importSource(android.net.Uri uri, File external, int machine, GameImport.Progress progress) throws IOException {
+        if (android.provider.DocumentsContract.isTreeUri(uri)) {
+            GameImport.extractWith(external, stage -> {
+                Path unpacked = stage.resolve("unpacked");
+                Files.createDirectory(unpacked);
+                String id = android.provider.DocumentsContract.getTreeDocumentId(uri);
+                copyTree(uri, id, unpacked, progress, new long[2], 0);
+                GameSource.normalize(stage, unpacked, machine, this::extractTool, progress, false);
+            });
+        } else {
+            try (InputStream input = getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IOException("Cannot open selected input");
+                GameSource.importFile(input, external, machine, this::extractTool, progress);
+            }
+        }
+    }
+
+    private void copyTree(android.net.Uri tree, String id, Path output, GameImport.Progress progress, long[] totals, int depth) throws IOException {
+        if (depth > 64) throw new IOException("Folder nesting exceeds 64");
+        android.net.Uri children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, id);
+        String[] columns = {android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME, android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE};
+        try (android.database.Cursor cursor = getContentResolver().query(children, columns, null, null, null)) {
+            if (cursor == null) throw new IOException("Cannot read selected folder");
+            while (cursor.moveToNext()) {
+                GameSource.interrupted();
+                if (++totals[0] > 100000) throw new IOException("Too many folder entries");
+                String childId = cursor.getString(0), name = cursor.getString(1), mime = cursor.getString(2);
+                if (name == null || name.contains("/")) throw new IOException("Invalid folder filename");
+                GameSource.safePath(name);
+                Path child = output.resolve(name);
+                if (android.provider.DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    Files.createDirectory(child);
+                    copyTree(tree, childId, child, progress, totals, depth + 1);
+                } else {
+                    try (InputStream input = getContentResolver().openInputStream(
+                            android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, childId))) {
+                        if (input == null) throw new IOException("Cannot open folder file: " + name);
+                        GameSource.copy(input, child, (message, bytes) -> {
+                            if (bytes > GameSource.MAX_BYTES - totals[1]) throw new IOException("Folder exceeds 16 GiB");
+                            progress.update(name, totals[1] + bytes);
+                        });
+                        long size = Files.size(child);
+                        if (size > GameSource.MAX_BYTES - totals[1]) throw new IOException("Folder exceeds 16 GiB");
+                        totals[1] += size;
+                    }
+                }
+            }
+        }
+    }
+
+    private void extractTool(String tool, Path input, Path output, GameImport.Progress progress) throws IOException {
+        ExtractTools.extract(this, tool, input, output, progress);
     }
 
     private void command(Path work, String tool, String... args) throws IOException {
