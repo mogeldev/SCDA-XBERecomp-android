@@ -4,12 +4,12 @@ A Windows WPF GUI builder package that creates the Android game's import ZIP fro
 
 ## Players
 
-1. Extract the complete builder ZIP into a writable folder and run `SCDA-Android-ARM64-Builder.exe`. Keep the EXE beside the `compiler/`, scripts and `licenses/` folders. No installation or administrator access is needed.
+1. Download the builder with the **same version as the app** (`SCDA-Android-<version>-Windows-Builder.zip`; the window title shows its version). Extract the complete builder ZIP into a writable folder and run `SCDA-Android-ARM64-Builder.exe`. Keep the EXE beside the `compiler/`, scripts and `licenses/` folders. No installation or administrator access is needed.
 2. Beside **Game source**, click **Folder...** and select the extracted game folder containing `default.xbe`, `Default/` and `Media/`, or click **ISO...** and select an original Xbox XISO image. ISO contents are extracted automatically with the bundled `extract-xiso` tool; the ISO is never modified.
 3. Click **Save as...** to choose where to save `SCDA-game.zip`, outside the source game folder.
 4. Click **Build game ZIP**. The responsive WPF window shows the current phase, elapsed time, compiler progress and ZIP throughput. You can resize it or turn off **Follow output** while it works. A first build can take several minutes, followed by ZIP compression.
 5. Copy the resulting ZIP to **Downloads** on your Android phone.
-6. Install the **matching version** of the Android APK, launch SCDA, select **Import game ZIP**, and choose the ZIP using Android's file picker.
+6. Install the Android APK of the **same version**, launch SCDA, select **Import game ZIP**, and choose the ZIP using Android's file picker. The app refuses a game ZIP made by a builder of another version; build it again with the matching builder.
 7. Keep setup open during extraction. On success, the game starts; later launches skip setup. Connect a controller to play.
 
 No command line, Visual Studio, Android SDK, Java, Python or separate runtime installation is needed on a standard Windows 10/11 installation. The GUI uses Windows' built-in WPF/.NET Framework and Windows PowerShell; compiler tools and scripts are supplied beside the EXE. Folder selection uses the native Windows shell picker; ISO and ZIP selection use WPF file dialogs. No WinForms dependency is used. The executable is unsigned, so Windows may show a reputation warning.
@@ -33,6 +33,7 @@ The GUI creates this layout automatically:
 ```text
 SCDA-game.zip
 ├── libscda_code.so
+├── scda-version.txt  (builder version, checked by the app)
 └── assets/
     ├── default.xbe
     ├── Default/  (with original files/subfolders)
@@ -59,7 +60,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/android-builder/packag
   -Recompiler out/android-recompiler/compiler/xbe_recomp.exe -Xbe assets/default.xbe
 ```
 
-Output: `out/SCDA-Android-ARM64-Builder.zip`. Pair it with an APK built from the same revision. The package contains a small `SCDA-Android-ARM64-Builder.exe`, the pinned `extract-xiso.exe`, compiler tools, build/ZIP scripts, configs, freestanding headers, licenses, the supported XBE hash and an empty host link stub. Packaging compiles the WPF `Builder.cs` with Windows' .NET Framework `csc.exe` and builds extract-xiso from revision `3f5b62cfe68f000b0e3c8a30104973f3a297948e` using Visual Studio 2022 C++ (static runtime). The first packaging run fetches that source. No SDK-style .NET project, NuGet packages or runtime downloads are needed for players.
+Output: `out/SCDA-Android-<version>-Windows-Builder.zip`, with `<version>` read from `versionName` in `android/build.gradle` and written to `version.txt` in the package. Publish it together with the APK built from the same commit. The package contains a small `SCDA-Android-ARM64-Builder.exe`, the pinned `extract-xiso.exe`, compiler tools, build/ZIP scripts, configs, freestanding headers, licenses, the supported XBE hash and an empty host link stub. Packaging compiles the WPF `Builder.cs` with Windows' .NET Framework `csc.exe` and builds extract-xiso from revision `3f5b62cfe68f000b0e3c8a30104973f3a297948e` using Visual Studio 2022 C++ (static runtime). The first packaging run fetches that source. No SDK-style .NET project, NuGet packages or runtime downloads are needed for players.
 
 ISO support uses [extract-xiso](https://github.com/xboxdev/extract-xiso). This product includes software developed by in <in@fishtank.com>. The upstream license is included as `licenses/extract-xiso.txt`.
 
@@ -69,7 +70,7 @@ Smoke test (extracts the package to a path with spaces, opens the GUI, checks it
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/android-builder/test.ps1 `
-  -Package out/SCDA-Android-ARM64-Builder.zip -Xbe assets/default.xbe
+  -Package out/SCDA-Android-<version>-Windows-Builder.zip -Xbe assets/default.xbe
 ```
 
 ZIP packager tests: `android/tests/package-game-test.ps1`. Android importer tests: [android/tests/README.md](../../android/tests/README.md).

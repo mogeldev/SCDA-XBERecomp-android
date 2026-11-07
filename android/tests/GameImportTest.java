@@ -146,6 +146,27 @@ public final class GameImportTest {
                     check(expected.getMessage().contains("already running"), "Wrong lock error");
                 }
             }
+            // Builder version must match the app; ZIPs without a version file (pre-versioning builders) stay accepted.
+            GameImport.appVersion = "0.1.0-testing.3";
+            Map<String, byte[]> matching = game(183);
+            matching.put(GameImport.VERSION_FILE, "0.1.0-testing.3\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Path versioned = Files.createDirectory(root.resolve("versioned"));
+            extract(zip(matching), versioned, (name, bytes) -> {});
+            check(GameImport.isInstalled(versioned.toFile()), "Matching builder version rejected");
+            Path legacy = Files.createDirectory(root.resolve("legacy"));
+            extract(valid, legacy, (name, bytes) -> {});
+            check(GameImport.isInstalled(legacy.toFile()), "Unversioned ZIP rejected");
+            Map<String, byte[]> other = game(183);
+            other.put(GameImport.VERSION_FILE, "0.1.0-testing.2".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            rejected(zip(other), root, "other builder version");
+            try {
+                extract(zip(other), Files.createDirectory(root.resolve("other-version")), (name, bytes) -> {});
+                throw new AssertionError("Accepted other builder version");
+            } catch (IOException expected) {
+                check(expected.getMessage().contains("builder 0.1.0-testing.2") && expected.getMessage().contains("app is 0.1.0-testing.3"),
+                    "Unclear version error: " + expected.getMessage());
+            }
+            GameImport.appVersion = null;
             Path x64 = Files.createDirectory(root.resolve("x64"));
             GameImport.extract(new ByteArrayInputStream(zip(game(62))), x64.toFile(), 62, (name, bytes) -> {});
             check(GameImport.isInstalled(x64.toFile()), "x86_64 emulator import failed");

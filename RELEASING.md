@@ -17,6 +17,7 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 - Promote RC to stable by copying the exact approved APK and matching builder/checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
 - **Debug keys only for Testing, RC and Stable.** Both Gradle debug and release variants explicitly use `signingConfigs.debug`; no separate production signing key is used. A release variant signed with a debug key is not necessarily a debuggable app.
 - Reuse and privately back up the same maintainer debug keystore (`~/.android/debug.keystore`) for published updates. Another machine's automatically generated debug key will differ: Android refuses an in-place update signed by a different certificate. Verify the certificate against the previous APK and publish its SHA-256 fingerprint. Never commit/upload the keystore or expose its private key; the standard debug credentials are not a security boundary. Do not recommend uninstalling an existing game just to bypass a signing mismatch, because that deletes app data.
+- **The Windows builder follows the APK version.** `tools/android-builder/package.ps1` reads `versionName` from `android/build.gradle` and creates `SCDA-Android-<version>-Windows-Builder.zip`; the GUI shows that version. Build both from the same commit and publish them together under the same version. Every game ZIP carries `scda-version.txt`; the app refuses a prebuilt ZIP from another builder version (ZIPs from older unversioned builders are still accepted).
 - Creating a tag does not build, install, upload or approve binaries. Publishing and stable promotion are separate, manually approved actions. No automatic publishing on pushes/tags is configured.
 
 ## Gates
@@ -33,7 +34,7 @@ Complete the following on the actual signed release candidate; features are froz
 
 - [ ] Fresh direct ISO/XISO import and automatic compilation/launch.
 - [ ] Archive import (ZIP, 7z, RAR/RAR5, TAR/compressed TAR) and extracted-folder picker; disclose untested variants.
-- [ ] Existing Windows-builder prebuilt ZIP compatibility.
+- [ ] Windows-builder prebuilt ZIP from the same version imports; a ZIP from another builder version is refused with a clear message.
 - [ ] Back cancellation, verified-object resume, force-stop/reopen; no incomplete library publication.
 - [ ] Manual picker cancellation/errors and storage-failure cleanup without destroying existing game files.
 - [ ] Production-package upgrade preserves game files, saves/settings, launcher entry and signing compatibility.

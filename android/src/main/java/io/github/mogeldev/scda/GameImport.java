@@ -23,6 +23,10 @@ final class GameImport {
     private static final long MAX_BYTES = 16L * 1024 * 1024 * 1024;
     private static final long SPACE_RESERVE = 32L * 1024 * 1024;
     private static final int MAX_ENTRIES = 100000;
+    // The Windows builder writes its version here; the matching APK must have the same versionName.
+    static final String VERSION_FILE = "scda-version.txt";
+    // This APK's versionName, set by setup; null skips the check (plain-Java tests)
+    static volatile String appVersion;
 
     interface Progress {
         void update(String name, long bytes) throws IOException;
@@ -174,6 +178,7 @@ final class GameImport {
             progress.update("Assets imported; ready to compile", -1);
             return;
         }
+        checkVersion(stage);
         byte[] elf = header(stage.resolve("libscda_code.so"), 20);
         int type = (elf[16] & 255) | ((elf[17] & 255) << 8);
         int arch = (elf[18] & 255) | ((elf[19] & 255) << 8);
@@ -182,6 +187,17 @@ final class GameImport {
             throw new IOException("libscda_code.so is not a matching 64-bit Android library. Use the matching player builder.");
         interrupted();
         progress.update("Import complete", -1);
+    }
+
+    // A prebuilt library must come from the builder of the same version. ZIPs from before versioning carry no file.
+    static void checkVersion(Path stage) throws IOException {
+        Path file = stage.resolve(VERSION_FILE);
+        if (appVersion == null || !Files.exists(file)) return;
+        if (Files.size(file) > 64) throw new IOException("Invalid " + VERSION_FILE + ".");
+        String built = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8).trim();
+        if (!built.equals(appVersion))
+            throw new IOException("This game ZIP was made by Windows builder " + built + ", but this app is " + appVersion
+                + ". Use the builder with the same version as the app, or install the matching app version.");
     }
 
     private static void validateName(String name, boolean directory) throws IOException {
@@ -193,7 +209,7 @@ final class GameImport {
         boolean allowed = directory
             ? name.equals("assets") || name.equals("assets/Default") || name.startsWith("assets/Default/")
                 || name.equals("assets/Media") || name.startsWith("assets/Media/")
-            : name.equals("libscda_code.so") || name.equals("assets/default.xbe")
+            : name.equals("libscda_code.so") || name.equals(VERSION_FILE) || name.equals("assets/default.xbe")
                 || name.startsWith("assets/Default/") || name.startsWith("assets/Media/");
         if (!allowed) throw new IOException("Unexpected ZIP path: " + name
             + ". Put libscda_code.so and assets/ at the ZIP root; include campaign files only.");

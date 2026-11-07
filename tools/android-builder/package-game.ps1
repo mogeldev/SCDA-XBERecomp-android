@@ -1,7 +1,9 @@
 param(
     [string]$Assets = (Join-Path $PSScriptRoot 'assets'),
     [string]$Library = (Join-Path $PSScriptRoot 'libscda_code.so'),
-    [string]$Output = (Join-Path $PSScriptRoot 'SCDA-game.zip')
+    [string]$Output = (Join-Path $PSScriptRoot 'SCDA-game.zip'),
+    # the builder version, checked by the APK; absent in a source checkout
+    [string]$VersionFile = (Join-Path $PSScriptRoot 'version.txt')
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -43,6 +45,7 @@ try {
             } finally { $source.Dispose() }
         }
         Add-File $library 'libscda_code.so'
+        if (Test-Path -LiteralPath $VersionFile -PathType Leaf) { Add-File (Resolve-Path -LiteralPath $VersionFile).Path 'scda-version.txt' }
         Add-File (Join-Path $assets 'default.xbe') 'assets/default.xbe'
         foreach ($folder in 'Default', 'Media') {
             $base = Join-Path $assets $folder

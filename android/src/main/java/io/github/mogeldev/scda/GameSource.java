@@ -110,7 +110,11 @@ final class GameSource {
         Path library = root.resolve("libscda_code.so");
         if (!Files.isRegularFile(library) && root.getFileName().toString().equals("assets"))
             library = root.getParent().resolve("libscda_code.so");
-        if (Files.isRegularFile(library)) Files.move(library, stage.resolve("libscda_code.so"));
+        if (Files.isRegularFile(library)) {
+            Files.move(library, stage.resolve("libscda_code.so"));
+            Path version = library.getParent().resolve(GameImport.VERSION_FILE);
+            if (Files.isRegularFile(version, LinkOption.NOFOLLOW_LINKS)) Files.move(version, stage.resolve(GameImport.VERSION_FILE));
+        }
         CompileCache.delete(unpacked);
         GameImport.validate(stage, machine, true, progress);
     }

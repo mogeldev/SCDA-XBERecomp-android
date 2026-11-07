@@ -30,6 +30,11 @@ public class SetupActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        try {
+            GameImport.appVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            GameImport.appVersion = null;
+        }
         File files = getExternalFilesDir(null);
         if (files != null && ready(files)) {
             launchGame();

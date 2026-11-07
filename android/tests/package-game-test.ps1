@@ -12,7 +12,15 @@ try {
     $script = Join-Path $repo 'tools/android-builder/package-game.ps1'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Assets "$root/assets" -Library "$root/libscda_code.so" -Output "$root/game.zip"
     if ($LASTEXITCODE) { throw 'Packaging failed.' }
+    Set-Content -LiteralPath "$root/version.txt" -Value '0.1.0-testing.3' -Encoding ASCII
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Assets "$root/assets" -Library "$root/libscda_code.so" -Output "$root/versioned.zip" -VersionFile "$root/version.txt"
+    if ($LASTEXITCODE) { throw 'Versioned packaging failed.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $versioned = [IO.Compression.ZipFile]::OpenRead("$root/versioned.zip")
+    try {
+        $reader = [IO.StreamReader]::new($versioned.GetEntry('scda-version.txt').Open())
+        try { if ($reader.ReadToEnd().Trim() -ne '0.1.0-testing.3') { throw 'Wrong builder version in ZIP.' } } finally { $reader.Dispose() }
+    } finally { $versioned.Dispose() }
     $zip = [IO.Compression.ZipFile]::OpenRead("$root/game.zip")
     try {
         $actual = @($zip.Entries | ForEach-Object { $_.FullName } | Sort-Object)
@@ -29,5 +37,5 @@ try {
     } finally { $ErrorActionPreference = $oldPreference }
     if ($LASTEXITCODE -eq 0) { throw 'Accepted missing XBE.' }
     if ((Get-FileHash "$root/game.zip").Hash -ne $before) { throw 'Damaged previous ZIP on failure.' }
-    Write-Host 'PASS: import ZIP shape, spaces in paths, campaign-only filtering, content and failure preservation.'
+    Write-Host 'PASS: import ZIP shape, builder version entry, spaces in paths, campaign-only filtering, content and failure preservation.'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

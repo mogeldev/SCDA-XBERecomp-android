@@ -208,12 +208,20 @@ internal sealed class BuilderWindow : Window
     private bool logWriteFailed;
     private readonly DispatcherTimer logTimer;
     private readonly string toolsDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
+    // version.txt beside the EXE, written by package.ps1 from the APK's versionName
+    internal static string Version(string tools)
+    {
+        string file = Path.Combine(tools, "version.txt");
+        return File.Exists(file) ? File.ReadAllText(file).Trim() : "unknown";
+    }
     private string logPath;
     private bool busy;
 
     internal BuilderWindow()
     {
-        Title = "SCDA Android ARM64 Builder";
+        string version = Version(toolsDirectory);
+        Title = "SCDA Android ARM64 Builder " + version;
         Width = 980;
         Height = 760;
         MinWidth = 760;
@@ -246,7 +254,7 @@ internal sealed class BuilderWindow : Window
         Content = layout;
 
         StackPanel header = new StackPanel { Margin = new Thickness(0, 0, 0, 24) };
-        header.Children.Add(new TextBlock { Text = "SCDA  /  ANDROID ARM64", FontSize = 12,
+        header.Children.Add(new TextBlock { Text = "SCDA  /  ANDROID ARM64  /  " + version.ToUpperInvariant(), FontSize = 12,
             FontWeight = FontWeights.SemiBold, Foreground = Brush("#69E2BB") });
         header.Children.Add(new TextBlock { Text = "Prepare your game", FontSize = 30,
             FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 5, 0, 8) });
@@ -328,7 +336,7 @@ internal sealed class BuilderWindow : Window
             BorderBrush = Brush("#35465E"), Background = log.Background, Child = log, Padding = new Thickness(2) };
         Add(logPanel, logCard, 1, 0);
         Add(layout, logPanel, 5, 0, 3);
-        status.Text = "Ready. Use the APK matching this builder. Keep your game ZIP private.";
+        status.Text = "Ready. Use SCDA Android app " + version + "; other app versions refuse this ZIP. Keep your game ZIP private.";
         status.TextWrapping = TextWrapping.Wrap;
         status.Margin = new Thickness(0, 8, 0, 8);
         Add(layout, status, 6, 0, 3);

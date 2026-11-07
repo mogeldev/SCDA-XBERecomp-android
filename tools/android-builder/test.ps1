@@ -32,7 +32,9 @@ $window = [Activator]::CreateInstance($assembly.GetType('BuilderWindow', $true),
 try {
     $window.Show()
     [Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([Action] {})
-    Assert ($window.IsVisible -and $window.Title -eq 'SCDA Android ARM64 Builder') 'GUI window did not open.'
+    $version = (Get-Content -LiteralPath "$root/version.txt" -Raw).Trim()
+    Assert ($version -match '^[0-9]+\.[0-9]+\.[0-9]+') 'Missing builder version.txt.'
+    Assert ($window.IsVisible -and $window.Title -eq "SCDA Android ARM64 Builder $version") 'GUI window did not open with its version.'
     $captions = [Collections.Generic.List[string]]::new()
     function Find-Captions($control) {
         if ($control -is [Windows.Controls.ContentControl] -and $control.Content -is [string]) { $captions.Add($control.Content) }
@@ -78,8 +80,10 @@ try {
     Assert (Test-Path -LiteralPath $importZip) 'GUI build pipeline did not create import ZIP.'
     $gameZip = [IO.Compression.ZipFile]::OpenRead($importZip)
     try {
-        Assert ($gameZip.Entries.Count -eq 4) 'Unexpected import ZIP shape.'
+        Assert ($gameZip.Entries.Count -eq 5) 'Unexpected import ZIP shape.'
         Assert ($gameZip.GetEntry('libscda_code.so').Length -gt 1MB) 'Missing library in import ZIP.'
+        $reader = [IO.StreamReader]::new($gameZip.GetEntry('scda-version.txt').Open())
+        try { Assert ($reader.ReadToEnd().Trim() -eq $version) 'Import ZIP lacks the builder version.' } finally { $reader.Dispose() }
     } finally { $gameZip.Dispose() }
     # Build an XISO without media patching, so default.xbe retains the supported hash.
     $isoPath = Join-Path $root 'game test.iso'

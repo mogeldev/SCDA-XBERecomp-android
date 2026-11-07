@@ -17,6 +17,10 @@ $vs = & $vswhere -latest -products '*' -property installationPath
 if ($LASTEXITCODE -or -not $vs) { throw 'Visual Studio C++ redistributable files not found.' }
 $crt = @(Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending)[0].FullName
 $ndk = Join-Path $SdkRoot 'ndk/29.0.14206865'
+# One version source: the APK's versionName. The builder and the APK are published together under it.
+$gradle = Get-Content -LiteralPath (Join-Path $repo 'android/build.gradle') -Raw
+if ($gradle -notmatch "versionName\s*=\s*'([0-9A-Za-z.\-]+)'") { throw 'versionName not found in android/build.gradle.' }
+$version = $Matches[1]
 
 $stage = Join-Path $repo ('out/android-builder-package-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path "$stage/compiler/include/cpu", "$stage/compiler/include/freestanding", "$stage/compiler/config", "$stage/licenses" | Out-Null
@@ -41,6 +45,8 @@ try {
     Copy-Item -LiteralPath "$repo/src/cpu/x86_ops.h", "$repo/src/cpu/x86_context.h" -Destination "$stage/compiler/include/cpu"
     Copy-Item "$repo/src/cpu/freestanding/*" -Destination "$stage/compiler/include/freestanding"
     Copy-Item -LiteralPath "$PSScriptRoot/Builder.cs", "$PSScriptRoot/build.ps1", "$PSScriptRoot/package-game.ps1", "$PSScriptRoot/README.md" -Destination $stage
+    # Read by the GUI and written into every game ZIP; the APK refuses a ZIP from another version.
+    Set-Content -LiteralPath "$stage/version.txt" -Value $version -Encoding ASCII
     # Build the pinned extract-xiso source for the Windows host, not Android.
     $extractBuild = Join-Path $repo 'out/android-extract-xiso'
     & "$cmake/bin/cmake.exe" -S "$PSScriptRoot/extract-xiso" -B $extractBuild -G 'Visual Studio 17 2022' -A x64
@@ -71,11 +77,11 @@ try {
         /reference:System.dll /reference:System.Core.dll /reference:System.Xaml.dll `
         /reference:"$wpf/WindowsBase.dll" /reference:"$wpf/PresentationCore.dll" /reference:"$wpf/PresentationFramework.dll" $source
     if ($LASTEXITCODE) { throw 'Compiling the builder GUI failed.' }
-    $output = Join-Path $repo 'out/SCDA-Android-ARM64-Builder.zip'
+    $output = Join-Path $repo "out/SCDA-Android-$version-Windows-Builder.zip"
     $temp = Join-Path $repo ('out/' + [Guid]::NewGuid().ToString('N') + '.zip')
     Compress-Archive -Path "$stage/*" -DestinationPath $temp -CompressionLevel Optimal
     Move-Item -LiteralPath $temp -Destination $output -Force
-    Write-Host "Created $output (GUI with companion tools; no game assets or generated code)."
+    Write-Host "Created $output (builder $version: GUI with companion tools; no game assets or generated code)."
 } finally {
     if ($temp -and (Test-Path -LiteralPath $temp)) { Remove-Item -LiteralPath $temp -Force }
     Remove-Item -LiteralPath $stage -Recurse -Force
