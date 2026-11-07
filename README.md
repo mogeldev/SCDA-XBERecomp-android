@@ -4,6 +4,10 @@ Unofficial **Android ARM64 port** of the original Xbox game using static recompi
 
 > No game assets or recompiled game code are included. You need your own legally acquired **original Xbox copy**, not the PC or Xbox 360 version. Never share your game ZIP, XBE, generated sources, objects or `libscda_code.so`.
 
+## Release channels
+
+Starting at **0.1.0**: **Testing → Release Candidate → Stable**. Version tags are immutable; testing/RC releases are prereleases, and stable promotes the exact approved RC binary without rebuilding. The first checkpoint, **0.1.0-testing.1**, is source-only while production signing/device validation and toolchain distribution requirements are resolved. See [release policy and gates](RELEASING.md).
+
 ## Requirements and status
 
 - **Phone:** Android 11+ (API 30), ARM64, Vulkan 1.1 and an SDL-compatible controller.
