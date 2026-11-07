@@ -11,6 +11,7 @@
 
 
     <application android:label="SCDA"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true"

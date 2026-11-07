@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed (Android 13+) icon: the mount's ring and the three lenses, tinted by the system. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
+        android:pathData="M54,25a27,27 0,1 1,0 54a27,27 0,1 1,0 -54z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,33a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M43,52a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M65,52a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+</vector>

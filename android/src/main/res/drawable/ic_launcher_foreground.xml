@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon: three glowing night-vision lenses on a goggle mount, the setup screen's "● ● ●". Inside the adaptive
+     icon's 66dp safe zone (21-87). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- strap -->
+    <path android:fillColor="#FF0E1812" android:pathData="M0,48h108v8h-108z" />
+    <!-- mount -->
+    <path
+        android:fillColor="#FF14211A"
+        android:strokeColor="#FF2F4A38"
+        android:strokeWidth="1.5"
+        android:pathData="M54,25a27,27 0,1 1,0 54a27,27 0,1 1,0 -54z" />
+    <!-- glow -->
+    <path android:pathData="M54,27a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="41" android:gradientRadius="14"
+                android:startColor="#80B2EF83" android:endColor="#00B2EF83" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M43,46a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="43" android:centerY="60" android:gradientRadius="14"
+                android:startColor="#80B2EF83" android:endColor="#00B2EF83" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M65,46a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="65" android:centerY="60" android:gradientRadius="14"
+                android:startColor="#80B2EF83" android:endColor="#00B2EF83" />
+        </aapt:attr>
+    </path>
+    <!-- rims -->
+    <path android:fillColor="#FF0A120D" android:strokeColor="#FF4A6E55" android:strokeWidth="1.2"
+        android:pathData="M54,31a10,10 0,1 1,0 20a10,10 0,1 1,0 -20z" />
+    <path android:fillColor="#FF0A120D" android:strokeColor="#FF4A6E55" android:strokeWidth="1.2"
+        android:pathData="M43,50a10,10 0,1 1,0 20a10,10 0,1 1,0 -20z" />
+    <path android:fillColor="#FF0A120D" android:strokeColor="#FF4A6E55" android:strokeWidth="1.2"
+        android:pathData="M65,50a10,10 0,1 1,0 20a10,10 0,1 1,0 -20z" />
+    <!-- lenses -->
+    <path android:pathData="M54,34a7,7 0,1 1,0 14a7,7 0,1 1,0 -14z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="52.5" android:centerY="39.5" android:gradientRadius="8"
+                android:startColor="#FFF2FFE8" android:centerColor="#FFB2EF83" android:endColor="#FF3E7A2C" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M43,53a7,7 0,1 1,0 14a7,7 0,1 1,0 -14z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="41.5" android:centerY="58.5" android:gradientRadius="8"
+                android:startColor="#FFF2FFE8" android:centerColor="#FFB2EF83" android:endColor="#FF3E7A2C" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M65,53a7,7 0,1 1,0 14a7,7 0,1 1,0 -14z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="63.5" android:centerY="58.5" android:gradientRadius="8"
+                android:startColor="#FFF2FFE8" android:centerColor="#FFB2EF83" android:endColor="#FF3E7A2C" />
+        </aapt:attr>
+    </path>
+</vector>
