@@ -891,6 +891,16 @@ private:
     bool narrow_barriers_ = false;
     // Default on: swapchain at the render scale; the display hardware stretches it (debug.scda.vk_present_scaled=0 off).
     bool present_scaled_ = false;
+    // Image-changing, user-approved, default on (property 0 disables). E1: targets of at most kEffectSide console
+    // pixels (glow/brightness chains) keep the console's size. E2: no box-averaged taps when an upscaled target is
+    // shrunk into a smaller one.
+    static constexpr uint32_t kEffectSide = 256;
+    bool effect_native_ = false;
+    bool effect_single_tap_ = false;
+    bool rebuild_targets_ = false;
+    bool EffectTarget(uint32_t gw, uint32_t gh) const {
+        return effect_native_ && std::max(gw, gh) <= kEffectSide && gw < guest_w_ && gh < guest_h_;
+    }
     bool descriptor_cache_ = true;
     bool skip_unused_stages_ = true;
     bool timing_pass_ = false;
@@ -952,6 +962,8 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     profile_passes_ = DebugFlag("debug.scda.vk_profile_passes", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
     present_scaled_ = DebugFlag("debug.scda.vk_present_scaled", true);
+    effect_native_ = DebugFlag("debug.scda.vk_effect_native", true);
+    effect_single_tap_ = DebugFlag("debug.scda.vk_effect_single_tap", true);
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     cold_cache_ = profile_ && DebugFlag("debug.scda.vk_cold_cache");
@@ -1763,7 +1775,7 @@ Target* VulkanBackend::EnsureTarget(const Surface& s, bool depth) {
     t.depth = depth;
     t.gw = gw;
     t.gh = gh;
-    float sc = shadow && shadow_res_ ? float(shadow_res_) / gw : scale_;
+    float sc = shadow && shadow_res_ ? float(shadow_res_) / gw : EffectTarget(gw, gh) ? std::min(scale_, 1.0f) : scale_;
     t.w = std::max(1u, uint32_t(std::lround(gw * sc)));
     t.h = std::max(1u, uint32_t(std::lround(gh * sc)));
     ImageDesc d{depth ? depth_fmt_ : kBgra, t.w, t.h};
@@ -1871,7 +1883,7 @@ void VulkanBackend::BindTargetTexture(const State& s, int stage, const TextureDe
     // a pass shrinking it averages each tap over a console texel, else upscaled taps skip texels and ghost
     Target* rt = FindTarget(s.rt, false);
     float k = float(t.w) / t.gw;
-    if (!t.depth && k > kUpscaledMin && rt && rt != &t && (t.gw > rt->gw || t.gh > rt->gh)) {
+    if (!effect_single_tap_ && !t.depth && k > kUpscaledMin && rt && rt != &t && (t.gw > rt->gw || t.gh > rt->gh)) {
         stages.wide[stage] = k;
         info.flags |= kTexWide;
     }
@@ -2702,6 +2714,42 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
     if (!dst_t || src_t == dst_t) return;
     EndRendering(PassEnd::Copy);
     float sc = float(dst_t->w) / dst_t->gw;
+    if (float ss = float(src_t->w) / src_t->gw; std::fabs(ss - sc) > 1e-3f) {
+        // E1 targets keep the console's size: each side scales its own rectangle, filtered
+        auto at = [](float v, float s, uint32_t lim) { return int32_t(std::min(uint32_t(std::max(v, 0.0f) * s + 0.5f), lim)); };
+        std::vector<VkImageBlit> blits;
+        bool listed = count && src_rects;
+        for (uint32_t i = 0; i < (listed ? count : 1); i++) {
+            float l = 0, t = 0, r = float(std::min(src_t->gw, dst_t->gw)), b = float(std::min(src_t->gh, dst_t->gh));
+            if (listed) {
+                uint32_t p = src_rects + i * 16;
+                l = float(int32_t(kernel::R32(p))), t = float(int32_t(kernel::R32(p + 4)));
+                r = float(int32_t(kernel::R32(p + 8))), b = float(int32_t(kernel::R32(p + 12)));
+            }
+            float dx = l, dy = t;
+            if (listed && dst_points) {
+                dx = float(int32_t(kernel::R32(dst_points + i * 8)));
+                dy = float(int32_t(kernel::R32(dst_points + i * 8 + 4)));
+            }
+            VkImageBlit bl{};
+            bl.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            bl.dstSubresource = bl.srcSubresource;
+            bl.srcOffsets[0] = {at(l, ss, src_t->w), at(t, ss, src_t->h), 0};
+            bl.srcOffsets[1] = {at(r, ss, src_t->w), at(b, ss, src_t->h), 1};
+            bl.dstOffsets[0] = {at(dx, sc, dst_t->w), at(dy, sc, dst_t->h), 0};
+            bl.dstOffsets[1] = {at(dx + r - l, sc, dst_t->w), at(dy + b - t, sc, dst_t->h), 1};
+            if (bl.srcOffsets[1].x <= bl.srcOffsets[0].x || bl.srcOffsets[1].y <= bl.srcOffsets[0].y ||
+                bl.dstOffsets[1].x <= bl.dstOffsets[0].x || bl.dstOffsets[1].y <= bl.dstOffsets[0].y)
+                continue;
+            blits.push_back(bl);
+        }
+        if (blits.empty()) return;
+        vkCmdBlitImage(Cur().cmd, src_t->im.image, VK_IMAGE_LAYOUT_GENERAL, dst_t->im.image, VK_IMAGE_LAYOUT_GENERAL,
+                       uint32_t(blits.size()), blits.data(), VK_FILTER_LINEAR);
+        GlobalBarrier();
+        dst_t->drawn = true;
+        return;
+    }
     auto scaled = [&](int32_t v) { return uint32_t(uint32_t(v) * sc); };
     std::vector<VkImageCopy> regions;
     bool listed = count && src_rects;
@@ -3009,7 +3057,7 @@ void VulkanBackend::LogStats() {
     std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
     LOGI("vk-passes: sampled=%zu gpu-submissions=%llu (first %u passes per submission)",
          top.size(), (unsigned long long)s.gpu_samples, kTimedPasses);
-    for (size_t i = 0; i < std::min<size_t>(top.size(), 8); i++) {
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 32); i++) {
         const auto& [key, p] = top[i];
         double samples = double(std::max<uint64_t>(s.gpu_samples, 1));
         LOGI("vk-pass: target=%08X size=%ux%u ms/submit=%.3f passes/submit=%.2f draws/pass=%.1f",
@@ -3023,6 +3071,11 @@ void VulkanBackend::LogStats() {
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
+    if (bool native = DebugFlag("debug.scda.vk_effect_native", true); native != effect_native_) {
+        effect_native_ = native;
+        rebuild_targets_ = true;  // ApplySettings makes the targets again at their new sizes
+    }
+    effect_single_tap_ = DebugFlag("debug.scda.vk_effect_single_tap", true);
     if (bool scaled = DebugFlag("debug.scda.vk_present_scaled", true); scaled != present_scaled_) {
         present_scaled_ = scaled;
         recreate_ = true;  // the next present makes the swapchain at the new size
@@ -3041,7 +3094,8 @@ void VulkanBackend::ApplySettings() {
         scale = app::RenderScale(guest_h_);
         shadows = app::Get().shadow_resolution;
     }
-    if (std::fabs(scale - scale_) < 1e-4f && shadows == shadow_res_) return;
+    if (std::fabs(scale - scale_) < 1e-4f && shadows == shadow_res_ && !rebuild_targets_) return;
+    rebuild_targets_ = false;
     if (present_scaled_) recreate_ = true;  // the swapchain follows the render scale
     for (auto& [key, t] : targets_) {
         Release(t.im);
@@ -3060,7 +3114,8 @@ void VulkanBackend::ApplySettings() {
     }
     scale_ = scale;
     shadow_res_ = shadows;
-    LOGI("vulkan: settings applied, render scale %.3f, shadow resolution %u", scale_, shadow_res_);
+    LOGI("vulkan: settings applied, render scale %.3f, shadow resolution %u, effect targets %s, effect taps %s", scale_,
+         shadow_res_, effect_native_ ? "console size" : "scaled", effect_single_tap_ ? "single" : "averaged");
 }
 
 void VulkanBackend::Present(const Surface& front, bool pillarbox) {
