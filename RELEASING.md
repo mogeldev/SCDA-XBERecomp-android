@@ -15,7 +15,8 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 - Never silently replace published assets. Publish SHA-256 checksums, source commit and signing-certificate fingerprint. A withdrawn build gets a prominent warning; its version is never reused.
 - Increment Android `versionCode` for every new APK build/version. It must not go backwards even though the version name is restarting at 0.1.0. The first testing build uses code 3; codes 1 and 2 were already used during development.
 - Promote RC to stable by copying the exact approved APK and matching builder/checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
-- Use the same durable signing key for all production-package updates, or an explicitly tested Android signing-key migration. Never commit signing keys/passwords or publish the debug signing key. Verify compatibility with existing installations before offering an update.
+- **Debug keys only for Testing, RC and Stable.** Both Gradle debug and release variants explicitly use `signingConfigs.debug`; no separate production signing key is used. A release variant signed with a debug key is not necessarily a debuggable app.
+- Reuse and privately back up the same maintainer debug keystore (`~/.android/debug.keystore`) for published updates. Another machine's automatically generated debug key will differ: Android refuses an in-place update signed by a different certificate. Verify the certificate against the previous APK and publish its SHA-256 fingerprint. Never commit/upload the keystore or expose its private key; the standard debug credentials are not a security boundary. Do not recommend uninstalling an existing game just to bypass a signing mismatch, because that deletes app data.
 - Creating a tag does not build, install, upload or approve binaries. Publishing and stable promotion are separate, manually approved actions. No automatic publishing on pushes/tags is configured.
 
 ## Gates
@@ -24,7 +25,7 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 
 Before uploading an APK: successful production build, host tests, APK identity/content inspection, basic launch check, signing validation and distribution-license/source requirements. Use the isolated setup app for destructive import/storage experiments; test production-package upgrades separately without clearing user data. Notes must distinguish isolated-app results from production APK validation.
 
-A **source-only prerelease checkpoint** is allowed while signing/distribution gates remain unresolved. Label it explicitly: no installable build, no claim of binary-release readiness. GitHub source archives must not contain private game files or generated code.
+A **source-only prerelease checkpoint** is allowed while update-certificate validation or distribution gates remain unresolved. Label it explicitly: no installable build, no claim of binary-release readiness. GitHub source archives must not contain private game files or generated code.
 
 ### RC
 
@@ -50,6 +51,10 @@ Complete the following on the actual signed release candidate; features are froz
 
 ## First checkpoint: 0.1.0-testing.1
 
-Source-only prerelease. The isolated app's XISO → compile → gameplay flow was user-confirmed, and host/emulator tests passed. Production integration builds, but production-package device/upgrade/manual-picker testing, durable signing compatibility and LGPL corresponding-source compliance remain open. No APK or Windows-builder binary should be uploaded under this checkpoint until those gates are satisfied; instead publish the next testing version once ready.
+Source-only prerelease. The isolated app's XISO → compile → gameplay flow was user-confirmed, and host/emulator tests passed. Production integration builds, but production-package device/upgrade/manual-picker testing, update-certificate compatibility and LGPL corresponding-source compliance remain open. No APK or Windows-builder binary should be uploaded under this checkpoint until those gates are satisfied; instead publish the next testing version once ready.
+
+## Next development version: 0.1.0-testing.2
+
+The debug-only signing policy was adopted after `v0.1.0-testing.1` was published. Its immutable tag stays unchanged. Current Android source is `0.1.0-testing.2` / code 4; this does not create or publish a new release automatically. The signing-key choice is settled, but compatibility with existing installed certificates still needs validation.
 
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

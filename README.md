@@ -6,7 +6,7 @@ Unofficial **Android ARM64 port** of the original Xbox game using static recompi
 
 ## Release channels
 
-Starting at **0.1.0**: **Testing → Release Candidate → Stable**. Version tags are immutable; testing/RC releases are prereleases, and stable promotes the exact approved RC binary without rebuilding. The first checkpoint, **0.1.0-testing.1**, is source-only while production signing/device validation and toolchain distribution requirements are resolved. See [release policy and gates](RELEASING.md).
+Starting at **0.1.0**: **Testing → Release Candidate → Stable**. Version tags are immutable; testing/RC releases are prereleases, and stable promotes the exact approved RC binary without rebuilding. The first checkpoint, **0.1.0-testing.1**, is source-only while production signing/device validation and toolchain distribution requirements are resolved. All channels use **debug signing keys only**; maintainers must retain the same debug certificate for compatible updates. See [release policy and gates](RELEASING.md).
 
 ## Requirements and status
 
