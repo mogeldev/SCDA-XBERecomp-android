@@ -21,16 +21,15 @@ import android.widget.TextView;
 final class SetupView extends ScrollView {
     private static final int BG = 0xff080e0b, PANEL = 0xff111b15, GREEN = 0xffb2ef83;
     private static final int TEXT = 0xffedf4ee, MUTED = 0xffa9b8ae, BORDER = 0xff314537;
-    final Button select, folder;
+    final Button select, folder, cancel;
     final ProgressBar progress;
-    final TextView status;
-    private final TextView stage;
-    private final LinearLayout choices;
+    final TextView status, percent;
+    private final TextView stage, workTitle;
+    private final LinearLayout choices, importPage, workPage, content;
     private final FrameLayout center;
-    private final LinearLayout content;
     private Boolean stacked;
 
-    SetupView(Context context, boolean local, Runnable requirements, Runnable licenses) {
+    SetupView(Context context, boolean local, Runnable requirements, Runnable licenses, Runnable cancelAction) {
         super(context);
         setBackgroundColor(BG);
         setFillViewport(true);
@@ -43,19 +42,22 @@ final class SetupView extends ScrollView {
         TextView brand = text("● ● ●   THIRD ECHELON / ANDROID", 11, GREEN, true);
         brand.setPadding(0, dp(4), 0, dp(12));
         content.addView(brand);
+
+        importPage = column();
+        content.addView(importPage);
         LinearLayout card = column();
         card.setBackground(new Grid());
         card.setPadding(dp(20), dp(16), dp(20), dp(12));
-        content.addView(card);
+        importPage.addView(card);
         card.addView(text("SPLINTER CELL: DOUBLE AGENT", 11, GREEN, true));
-        TextView title = text("Game setup", 28, TEXT, false);
+        TextView title = text("Import game", 28, TEXT, false);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setPadding(0, dp(4), 0, dp(4));
         title.setAccessibilityHeading(true);
         card.addView(title);
-        card.addView(text(local ? "Import your Xbox game. Compile on this device."
-            : "Import a ZIP from the matching Windows builder.", 14, MUTED, false));
-        stage = text("01  IMPORT   /   02  COMPILE   /   03  PLAY", 11, GREEN, true);
+        card.addView(text(local ? "Choose your game source. Compilation runs on this device."
+            : "Select a ZIP from the matching Windows builder.", 14, MUTED, false));
+        stage = text("01  IMPORT      /      02  COMPILE      /      03  PLAY", 11, GREEN, true);
         stage.setPadding(0, dp(12), 0, dp(12));
         card.addView(stage);
 
@@ -73,15 +75,6 @@ final class SetupView extends ScrollView {
         TextView facts = text("Controller required  ·  Saves and settings unchanged", 11, MUTED, false);
         facts.setPadding(0, dp(10), 0, dp(4));
         card.addView(facts);
-        progress = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
-        progress.setIndeterminate(true);
-        progress.setIndeterminateTintList(ColorStateList.valueOf(GREEN));
-        progress.setVisibility(GONE);
-        card.addView(progress, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(8)));
-        status = text("", 13, TEXT, false);
-        status.setPadding(0, dp(6), 0, dp(4));
-        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        card.addView(status);
 
         LinearLayout footer = new LinearLayout(context);
         footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
@@ -98,14 +91,89 @@ final class SetupView extends ScrollView {
             footer.addView(notice, params);
         }
         card.addView(footer);
-        TextView fine = text("Supported original Xbox game required. No game content included.\n"
-            + "Keep setup open. Back cancels; completed compiler work can be resumed."
+        TextView fine = text("Supported original Xbox game required. No game content included."
             + (local ? "\nISO: extract-xiso. This product includes software developed by in <in@fishtank.com>." : ""), 10, MUTED, false);
-        fine.setPadding(0, dp(10), 0, dp(4));
-        content.addView(fine);
+        fine.setPadding(0, dp(8), 0, dp(2));
+        importPage.addView(fine);
+
+        workPage = column();
+        workPage.setVisibility(GONE);
+        content.addView(workPage);
+        LinearLayout workCard = column();
+        workCard.setBackground(new Grid());
+        workCard.setPadding(dp(20), dp(18), dp(20), dp(16));
+        workPage.addView(workCard);
+        workCard.addView(text("SPLINTER CELL: DOUBLE AGENT", 11, GREEN, true));
+        workTitle = text("Importing game", 26, TEXT, false);
+        workTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        workTitle.setPadding(0, dp(5), 0, dp(10));
+        workCard.addView(workTitle);
+        progress = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        progress.setIndeterminateTintList(ColorStateList.valueOf(GREEN));
+        progress.setProgressTintList(ColorStateList.valueOf(GREEN));
+        progress.setVisibility(GONE);
+        workCard.addView(progress, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(8)));
+        LinearLayout progressLine = new LinearLayout(context);
+        progressLine.setGravity(Gravity.CENTER_VERTICAL);
+        status = text("", 13, MUTED, false);
+        progressLine.addView(status, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1));
+        percent = text("", 12, GREEN, true);
+        percent.setVisibility(GONE);
+        progressLine.addView(percent);
+        status.setPadding(0, dp(12), 0, dp(8));
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        workCard.addView(progressLine);
+        LinearLayout actions = new LinearLayout(context);
+        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        cancel = button("Back", false);
+        cancel.setOnClickListener(v -> cancelAction.run());
+        actions.addView(cancel, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        workCard.addView(actions);
+        TextView note = text("Keep setup open. Completed compiler work is saved and can be resumed.", 11, MUTED, false);
+        note.setPadding(0, dp(10), 0, 0);
+        workPage.addView(note);
     }
 
-    void phase(String text) { stage.setText(text); }
+    boolean isWorkPageVisible() { return workPage.getVisibility() == VISIBLE; }
+
+    void showImportPage() {
+        workPage.setVisibility(GONE);
+        importPage.setVisibility(VISIBLE);
+        stage.setText("01  IMPORT      /      02  COMPILE      /      03  PLAY");
+        select.requestFocus();
+    }
+
+    void showWorkPage(boolean compiling, String message, boolean active) {
+        importPage.setVisibility(GONE);
+        workPage.setVisibility(VISIBLE);
+        workTitle.setText(compiling ? "Compiling game" : "Importing game");
+        progress.setIndeterminate(true);
+        progress.setVisibility(active ? VISIBLE : GONE);
+        percent.setVisibility(GONE);
+        cancel.setText(active ? "Back / cancel" : compiling ? "Compile / resume" : "Choose another file");
+        stage.setText(compiling ? "01  IMPORT  ✓      /      02  COMPILE      /      03  PLAY"
+            : "01  IMPORT      /      02  COMPILE      /      03  PLAY");
+        status.setText(message);
+        (active ? cancel : select).requestFocus();
+    }
+
+    void phase(String text) {
+        stage.setText(text);
+        if (text.startsWith("02")) workTitle.setText("Compiling game");
+    }
+
+    void workProgress(String message, int value) {
+        status.setText(message);
+        boolean known = value >= 0;
+        percent.setVisibility(known ? VISIBLE : GONE);
+        progress.setIndeterminate(!known);
+        if (known) {
+            progress.setProgress(value);
+            percent.setText(value + "%");
+            progress.setContentDescription("Compilation " + value + " percent");
+        } else progress.setContentDescription(message);
+    }
 
     private LinearLayout column() {
         LinearLayout layout = new LinearLayout(getContext());
@@ -160,7 +228,6 @@ final class SetupView extends ScrollView {
         int available = Math.max(0, View.MeasureSpec.getSize(widthSpec) - getPaddingLeft() - getPaddingRight());
         int width = Math.min((int) (available * 0.8f), dp(1100));
         content.getLayoutParams().width = width;
-        // Stack at narrow widths or enlarged text; keep the 80% panel instead of clipping labels.
         boolean stack = width / getResources().getDisplayMetrics().density
             / getResources().getConfiguration().fontScale < 540;
         if (stacked == null || stack != stacked) {

@@ -51,10 +51,12 @@ Complete the following on the actual signed release candidate; features are froz
 
 ## First checkpoint: 0.1.0-testing.1
 
-Source-only prerelease. The isolated app's XISO → compile → gameplay flow was user-confirmed, and host/emulator tests passed. Production integration builds, but production-package device/upgrade/manual-picker testing, update-certificate compatibility and LGPL corresponding-source compliance remain open. No APK or Windows-builder binary should be uploaded under this checkpoint until those gates are satisfied; instead publish the next testing version once ready.
+Source-only prerelease. No APK or Windows-builder binary was attached. Its immutable tag remains unchanged.
 
-## Next development version: 0.1.0-testing.2
+## Published testing version: 0.1.0-testing.2
 
-The debug-only signing policy was adopted after `v0.1.0-testing.1` was published. Its immutable tag stays unchanged. Current Android source is `0.1.0-testing.2` / code 4; this does not create or publish a new release automatically. The signing-key choice is settled, but compatibility with existing installed certificates still needs validation.
+The debug-only signing policy was adopted after `v0.1.0-testing.1` was published. Its immutable tag stays unchanged. `v0.1.0-testing.2` publishes the production ARM64 APK built from the tested source commit, its SHA-256 checksum, and corresponding compiler/toolchain source and build materials. Android source version is `0.1.0-testing.2` / code 4. The same debug certificate is retained for compatible updates.
+
+The phone workflow—install, select an ISO, on-device compilation, automatic launch and gameplay—was user-confirmed on Redmi Note 13 Pro 5G / Adreno 710. The maintainer confirms the bundled compiler/toolchain corresponding-source and licensing obligations are complete. Production-package upgrade-data preservation, low-storage stress, background/resume checks, Mali coverage and 16-KiB page-device testing remain open; this is not an RC or stable release.
 
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

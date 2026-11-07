@@ -26,6 +26,7 @@ final class GameImport {
 
     interface Progress {
         void update(String name, long bytes) throws IOException;
+        default void updatePercent(String name, int percent) throws IOException { update(name, -1); }
     }
 
     static boolean hasAssets(File root) {
@@ -95,7 +96,8 @@ final class GameImport {
     private static void unpack(InputStream input, Path stage, Progress progress) throws IOException {
         Set<String> names = new HashSet<>();
         byte[] buffer = new byte[256 * 1024];
-        long total = 0, spaceCheck = 0;
+        long total = 0, spaceCheck = 0, entryWritten = 0;
+        int entryPercent = -1;
         int entries = 0;
         try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(input, buffer.length))) {
             ZipEntry entry;
@@ -112,6 +114,8 @@ final class GameImport {
                     if (zip.read() != -1) throw new IOException("ZIP directory contains file data: " + name);
                     Files.createDirectories(path);
                 } else {
+                    entryWritten = 0;
+                    entryPercent = -1;
                     if (entry.getSize() > MAX_BYTES - total) throw new IOException("Game ZIP exceeds the 16 GiB limit.");
                     Files.createDirectories(path.getParent());
                     try (java.io.OutputStream output = Files.newOutputStream(path, StandardOpenOption.CREATE_NEW)) {
@@ -127,6 +131,14 @@ final class GameImport {
                             }
                             output.write(buffer, 0, count);
                             total += count;
+                            entryWritten += count;
+                            if (entry.getSize() > 0) {
+                                int percent = (int)Math.min(100, entryWritten * 100 / entry.getSize());
+                                if (percent != entryPercent) {
+                                    progress.updatePercent("Extracting " + name, percent);
+                                    entryPercent = percent;
+                                }
+                            }
                         }
                     }
                 }

@@ -266,7 +266,8 @@ public class OnDeviceSetupActivity extends SetupActivity {
                         getSystemService(ActivityManager.class).getMemoryInfo(memory);
                         int count = BuildJobs.choose(Runtime.getRuntime().availableProcessors(), memory.availMem,
                             memory.threshold, getSystemService(PowerManager.class).getCurrentThermalStatus());
-                        progress.update("Compiling " + done + "/129 (" + reused + " reused), " + count + " workers", -1);
+                        String compileStatus = "Compiling " + done + "/129 (" + reused + " reused), " + count + " workers";
+                        progress.updatePercent(compileStatus, done * 100 / 129);
                         List<Callable<Void>> batch = new ArrayList<>();
                         for (int n = 0; n < count && next < pending.size(); n++) {
                             String source = pending.get(next++);
@@ -274,6 +275,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
                         }
                         for (java.util.concurrent.Future<Void> result : workers.invokeAll(batch)) result.get();
                         done += batch.size();
+                        progress.updatePercent("Compiled " + done + "/129 objects", done * 100 / 129);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -287,6 +289,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
                     if (interrupted) Thread.currentThread().interrupt();
                 }
                 CompileCache.interrupted();
+                progress.updatePercent("All 129 objects compiled", 100);
                 StringBuilder response = new StringBuilder();
                 for (String source : sources) {
                     elf(work.resolve("obj/" + source + ".o"), 1);
