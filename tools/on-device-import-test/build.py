@@ -21,7 +21,7 @@ def main():
     java.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / 'android/src/main/java/io/github/mogeldev/scda/GameImport.java', java)
     for name in ('GameSource', 'CompileCache', 'ExtractTools'):
-        shutil.copy2(SETUP / f'src/main/java/io/github/mogeldev/scda/{name}.java', java)
+        shutil.copy2(ROOT / f'android/src/main/java/io/github/mogeldev/scda/{name}.java', java)
     import_tools.stage(args.sdk, 'x86_64', work / 'jniLibs/x86_64', work / 'assets')
     env = dict(os.environ, ANDROID_HOME=str(args.sdk), ANDROID_SDK_ROOT=str(args.sdk))
     subprocess.run([str(ROOT / 'android/gradlew.bat'), '-p', str(ROOT / 'tools/on-device-import-test'),

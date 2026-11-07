@@ -91,7 +91,7 @@ def main():
     if 'exists' in exists.stdout:
         raise SystemExit('Test game folder exists; not overwritten. Launch the test app manually, or uninstall ONLY ' + PACKAGE + ' to start fresh.')
     # With no published game, setup only creates this app's external files directory.
-    device('shell', 'am', 'start', '-n', PACKAGE + '/io.github.mogeldev.scda.SetupActivity')
+    device('shell', 'am', 'start', '-n', PACKAGE + '/io.github.mogeldev.scda.OnDeviceSetupActivity')
     time.sleep(2)
     device('shell', 'am', 'force-stop', PACKAGE)
     size = sum(p.stat().st_size for p, _ in files)
@@ -127,7 +127,7 @@ def main():
     shell('mv ' + external + '/.phone-built-stage ' + external + '/game')
     archive_path.unlink()
     print('All private input hashes verified. Launching SCDA Phone-built Test; existing game untouched.', flush=True)
-    device('shell', 'am', 'start', '-n', PACKAGE + '/io.github.mogeldev.scda.SetupActivity')
+    device('shell', 'am', 'start', '-n', PACKAGE + '/io.github.mogeldev.scda.OnDeviceSetupActivity')
 
 
 if __name__ == '__main__':

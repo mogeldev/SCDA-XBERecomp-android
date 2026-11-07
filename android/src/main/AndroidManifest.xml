@@ -13,8 +13,9 @@
     <application android:label="SCDA"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:enableOnBackInvokedCallback="false"
-        android:hardwareAccelerated="true">
-        <activity android:name="io.github.mogeldev.scda.SetupActivity"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true">
+        <activity android:name="io.github.mogeldev.scda.OnDeviceSetupActivity"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
             android:exported="true">
@@ -26,6 +27,10 @@
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
         </activity>
+        <!-- Preserve explicit launcher intents/shortcuts from older APKs. -->
+        <activity-alias android:name="io.github.mogeldev.scda.SetupActivity"
+            android:targetActivity="io.github.mogeldev.scda.OnDeviceSetupActivity"
+            android:exported="true" />
         <activity android:name="org.libsdl.app.SDLActivity"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
