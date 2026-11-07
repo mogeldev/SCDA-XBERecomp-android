@@ -4,6 +4,8 @@ Unofficial **original Xbox → Android ARM64** port using static recompilation, 
 
 **Bring your own legally acquired Xbox game.** No game assets or recompiled game code are included. PC/Xbox 360 versions are not supported.
 
+**Want to play on PC?** Visit the upstream [SCDA-XBERecomp project by TGP482](https://github.com/TGP482/SCDA-XBERecomp) for the PC version of this Xbox recompilation. Thank you to TGP482 and the upstream contributors for the original project and the work that made this Android port possible!
+
 ## Requirements
 
 - Android 11+, ARM64, Vulkan 1.1 and an SDL-compatible controller.
