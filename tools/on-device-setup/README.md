@@ -2,7 +2,7 @@
 
 **Developer experiment, not a distributable release.** New app ID `io.github.mogeldev.scda.localsetup`, label **SCDA Local Setup Test**. Does not update/clear the normal game or the earlier gameplay/probe apps.
 
-Reuses `android/` setup/importer/SDL sources with an opt-in compilation subclass. The normal setup does **not** opt in and still requires the matching Windows-builder library. Both modes accept the existing prebuilt ZIP. The Windows builder is unchanged.
+The validated compiler/import implementation now lives in `android/src/main/java/` and the production ARM64 launcher enables it too. This separate app remains a safe validation harness: `LocalSetupActivity` adds only the private debug-import entry, while production uses `OnDeviceSetupActivity` without that entry. Both accept existing prebuilt ZIPs; legacy installs still skip setup. The Windows builder is unchanged. Production Gradle builds its own matching runtime and stages tools into `out/android-tools/`, independently of this harness's supplied host APK.
 
 ## Workflow
 
@@ -58,7 +58,15 @@ This product includes software developed by in <in@fishtank.com>. Archive suppor
 
 Import trust boundaries reject absolute/traversal paths, links/devices, unsafe filenames, case-insensitive collisions, more than 100,000 entries, paths deeper than 64 and more than 16 GiB extracted data. Each extraction subprocess has a 30-minute wall timeout and 15-minute CPU limit; cancellation kills/waits the direct child before cleanup. Encrypted, split/multi-volume archives, recursive archive-in-archive chains and arbitrary disc-image formats (CHD/CSO/CCI) are not supported. Large compression dictionaries can still consume significant memory; Android Scudo prevents a useful simple virtual-address-space cap, so this is not a hardened sandbox for hostile inputs.
 
-Emulator-only import testing is in [`../on-device-import-test/README.md`](../on-device-import-test/README.md). It executes the same staging/validation/extraction path without bundling game content or requiring an x86 game runtime. The production app remains prebuilt-ZIP-only; these formats are currently enabled in the isolated local-setup app.
+Emulator-only import testing is in [`../on-device-import-test/README.md`](../on-device-import-test/README.md). It executes the same staging/validation/extraction path without bundling game content or requiring an x86 game runtime. These formats and local compilation are now wired into the production ARM64 build. Production-package update/picker behavior still requires final device validation; do not install over an existing normal game without permission.
+
+## Production integration validation
+
+The compiler/cache/source-import classes were moved into `android/src/main/java/` (not forked). Production uses `OnDeviceSetupActivity`; the isolated `LocalSetupActivity` now adds only its private ADB hook. ARM64 compiler capability is gated on installed tools; x86-64/no-tools builds fall back to the original prebuilt-ZIP importer. Existing ready/legacy install detection remains unchanged, and a manifest alias retains the old explicit launcher component. Production app ID stays `io.github.mogeldev.scda`; version is 0.2/code 2. The Windows builder is unchanged.
+
+Validated locally: automatic Gradle tool staging and production ARM64 build; dual-ABI development build; production APK identity/launcher, separate compiler/game runtimes, tools/notices and absence of game content/private debug-import hook; isolated setup build; 23 Python checks, 172 Java checks and rerun of all 30 emulator importer cases against the relocated shared classes. The emulator framework/package service disappeared during the first rerun; restarting the disposable emulator allowed the whole matrix to pass. No phone system changes or production-package installation occurred.
+
+Production ARM64 debug APK: `android/build/outputs/apk/debug/scda-debug.apk` (about 101 MiB). This is a build artifact, not a signed public release. The actual production host is built from current source instead of copied from a reference APK; the compilation cache fingerprints its packaged host/SDL/C++/main bytes as well as tool inputs. Public distribution still requires corresponding-source/license compliance for the bundled toolchain (see `android/TOOLCHAIN-NOTICES.md`), final signed-APK/device upgrade validation, manual pickers, storage stress and 16-KiB devices. The normal phone game has not been overwritten.
 
 ## Current ISO/archive validation
 
@@ -74,7 +82,7 @@ Repeat on a fresh isolated setup installation, with user approval (check the cur
 python tools/on-device-setup/run.py --sdk SDK --serial SERIAL --allow-phone --source PRIVATE_XISO_OR_ARCHIVE
 ```
 
-This retains the original runner's per-chunk/full-file verification and existing-game refusal. The debug staging filename remains `test-assets.zip` but contents are detected, not trusted by extension. It bypasses only the picker; the same import/compilation path runs. Keep the Windows builder and production ZIP workflow unchanged.
+This retains the original runner's per-chunk/full-file verification and existing-game refusal. The debug staging filename remains `test-assets.zip` but contents are detected, not trusted by extension. It bypasses only the picker; the same import/compilation path runs. Keep the Windows builder and prebuilt-ZIP compatibility working.
 
 ## Session handoff
 
@@ -82,13 +90,13 @@ The user uninstalled all test builds from the phone after validation. Do not rei
 
 Local temporary transfer ZIP/tar files, duplicate probe inputs and diagnostic screenshots/raw hang captures were removed during cleanup. Source game assets, release packages, pinned compiler downloads, build caches, concise validation logs and the validated phone-built library remain under their existing paths (private outputs stay ignored under `out/`). The test emulator and Gradle daemons were stopped at that checkpoint. ISO/archive work subsequently restored missing PC SDK components and created a disposable 40-GiB `scda_import_x64` emulator for testing. Private fixtures and full-sample validation logs are ignored under `out/on-device-import/`.
 
-Next session: finish manual system file/folder-picker testing in the isolated setup app, then exercise low-storage handling without filling the user's real phone. Review compiler provenance/licensing/distribution and production integration before shipping; Windows compilation remains the supported alternative. Known unrelated issue: mission loading intentionally waits for A but its prompt was not visible in the earlier test.
+Next session: finish manual system file/folder-picker testing in the isolated setup app, then exercise low-storage handling without filling the user's real phone. Review compiler provenance/licensing/distribution and validate the production-package APK before shipping; Windows compilation remains the supported alternative. Known unrelated issue: mission loading intentionally waits for A but its prompt was not visible in the earlier test.
 
 Run host tests:
 
 ```bat
 mkdir out\on-device-setup\tests
-javac -d out/on-device-setup/tests android/src/main/java/io/github/mogeldev/scda/GameImport.java android/tests/GameImportTest.java tools/on-device-setup/src/main/java/io/github/mogeldev/scda/CompileCache.java tools/on-device-setup/CompileCacheTest.java
+javac -d out/on-device-setup/tests android/src/main/java/io/github/mogeldev/scda/GameImport.java android/tests/GameImportTest.java android/src/main/java/io/github/mogeldev/scda/CompileCache.java tools/on-device-setup/CompileCacheTest.java
 java -cp out/on-device-setup/tests io.github.mogeldev.scda.GameImportTest
 java -cp out/on-device-setup/tests io.github.mogeldev.scda.CompileCacheTest
 ```

@@ -13,7 +13,7 @@ android {
     }
     sourceSets.main {
         manifest.srcFile '../../android/src/main/AndroidManifest.xml'
-        java.srcDirs = ['../../android/src/main/java', 'src/main/java', '../../out/on-device-setup/policy']
+        java.srcDirs = ['../../android/src/main/java', 'src/main/java']
         assets.srcDirs = ['../../out/on-device-setup/assets']
         jniLibs.srcDirs = ['../../out/on-device-setup/jniLibs']
     }

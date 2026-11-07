@@ -1,4 +1,4 @@
-# ZIP importer test
+# Importer and production setup tests
 
 This is a plain-Java test for the path, CRC, ABI, cancellation, storage-preservation and atomic-publish checks:
 
@@ -15,6 +15,19 @@ Test the PowerShell ZIP packager (including campaign-only filtering and failure 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File android/tests/package-game-test.ps1
 ```
+
+## On-device compiler/import integration
+
+The production ARM64 launcher now uses `OnDeviceSetupActivity`; no private ADB test-import entry is present in production. It retains the old launcher component as an alias and bypasses setup for existing installs. Plain-Java checks for the shared cache/source importer and production wiring:
+
+```bat
+javac -d out/import-tests android/src/main/java/io/github/mogeldev/scda/GameImport.java android/src/main/java/io/github/mogeldev/scda/CompileCache.java android/src/main/java/io/github/mogeldev/scda/GameSource.java tools/on-device-setup/CompileCacheTest.java tools/on-device-setup/GameSourceTest.java
+java -cp out/import-tests io.github.mogeldev.scda.CompileCacheTest
+java -cp out/import-tests io.github.mogeldev.scda.GameSourceTest
+python -m unittest discover -s android/tests -p "test_*.py"
+```
+
+The [emulator harness](../../tools/on-device-import-test/README.md) uses these exact shared classes, under a separate app ID. The [separate full setup app](../../tools/on-device-setup/README.md) still supports import/compile/gameplay tests without replacing production. Production-package upgrade, manual file/folder pickers and low-storage tests remain necessary. Do not install over the normal phone app without permission.
 
 ## Vulkan renderer tests
 
