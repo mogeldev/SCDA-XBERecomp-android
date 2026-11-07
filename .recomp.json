@@ -1,0 +1,16 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Tom Clancy's Splinter Cell: Double Agent",
+  "wikidata": "Q878492",
+  "system": "Xbox",
+  "type": "recomp",
+  "original": { "region": "USA", "sha1": "91290baf93c2f6ae735a3106c48734665c826d84" },
+  "project": "SCDA XBE Recomp Android",
+  "status": "in-progress",
+  "targets": ["Android"],
+  "toolchain": "xbe_recomp",
+  "approach": "Android ARM64 port of the TGP482 static recompilation; Vulkan renderer, on-device compilation from your own ISO",
+  "maintainers": [{ "name": "mogeldev", "link": "https://github.com/mogeldev" }],
+  "links": [{ "label": "Upstream (Windows)", "url": "https://github.com/TGP482/SCDA-XBERecomp" }],
+  "notes": "Testing pre-releases only. Tested on Adreno 710; Mali GPUs and 16-KiB page-size devices untested. Controller required. Campaign only. No game files included."
+}
