@@ -39,6 +39,9 @@
 #include "android/descriptor_sets.h"
 #include "android/frame_fences.h"
 #include "android/image_memory.h"
+#include "android/pass_barrier.h"
+#include "android/render_clears.h"
+#include "android/texture_stages.h"
 #include "android/vertex_hlsl.h"
 
 namespace gpu {
@@ -759,7 +762,8 @@ private:
     VkFramebuffer Framebuffer(VkRenderPass rp, VkImageView color, VkImageView depth, uint32_t w, uint32_t h);
     void ForgetView(VkImageView v);
     void BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h, uint64_t timing_key);
-    void EndRendering();
+    enum class PassEnd { Targets, Auxiliary, Feedback, Copy, Readback, Resize, Present, Submit, Count };
+    void EndRendering(PassEnd reason);
     void GlobalBarrier();
     void SetViewport(float x, float y, float w, float h);
     // targets
@@ -883,8 +887,13 @@ private:
     uint32_t shadow_res_ = 0;
     Assembled asm_;
     bool profile_ = false;
+    bool profile_passes_ = true;
+    bool narrow_barriers_ = false;
     bool descriptor_cache_ = true;
+    bool skip_unused_stages_ = true;
     bool timing_pass_ = false;
+    bool trace_passes_ = false;
+    uint32_t trace_draws_ = 0;
     struct PassStats {
         double ms = 0;
         uint64_t count = 0, draws = 0;
@@ -894,6 +903,9 @@ private:
     struct Stats {
         uint64_t frames = 0, draws = 0, sets = 0, hits = 0, upload_bytes = 0, passes = 0, flushes = 0, syncs = 0;
         uint64_t shaders = 0, pipelines = 0, gpu_samples = 0;
+        std::array<uint64_t, size_t(PassEnd::Count)> pass_ends{};
+        uint64_t clears = 0, full_clear_starts = 0, unused_stages = 0;
+        uint64_t clear_color_pixels = 0, clear_depth_pixels = 0, clear_stencil_pixels = 0;
         double draw_ms = 0, descriptor_ms = 0, wait_ms = 0, acquire_ms = 0, present_ms = 0;
         double shader_ms = 0, pipeline_ms = 0, gpu_ms = 0;
     } stats_;
@@ -926,7 +938,10 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     guest_h_ = height;
     window_ = static_cast<SDL_Window*>(app::Window());
     profile_ = DebugFlag("debug.scda.vk_profile");
+    profile_passes_ = DebugFlag("debug.scda.vk_profile_passes", true);
+    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
+    skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     LOGI("vulkan: profiling %s, descriptor cache %s", profile_ ? "on" : "off", descriptor_cache_ ? "on" : "off");
     glslang::InitializeProcess();
     if (!CreateInstance() || !CreateSurface() || !CreateDevice()) return false;
@@ -1507,7 +1522,7 @@ void VulkanBackend::BeginFrame() {
 
 void VulkanBackend::Submit(VkSemaphore wait, VkSemaphore signal) {
     Frame& f = Cur();
-    EndRendering();
+    EndRendering(PassEnd::Submit);
     if (f.timestamps) {
         vkCmdWriteTimestamp(f.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, f.timestamps, 1);
         f.timestamps_pending = true;
@@ -1613,9 +1628,11 @@ void VulkanBackend::ForgetView(VkImageView v) {
 
 void VulkanBackend::BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h, uint64_t timing_key) {
     if (profile_) stats_.passes++;
+    trace_draws_ = 0;
+    if (trace_passes_) LOGI("vk-trace: begin target=%08X size=%ux%u", uint32_t(timing_key), w, h);
     Frame& f = Cur();
     assert(!active_ && !timing_pass_ && f.timed_count <= kTimedPasses);
-    timing_pass_ = f.timestamps && f.timed_count < kTimedPasses;
+    timing_pass_ = profile_passes_ && f.timestamps && f.timed_count < kTimedPasses;
     if (timing_pass_) {
         f.timed_passes[f.timed_count] = {timing_key, 0};
         // Bottom-of-pipe boundaries give serialized intervals, including attachment load/store and pass barriers.
@@ -1634,7 +1651,7 @@ void VulkanBackend::BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uin
 
 void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     if (active_ && !other_ && active_rt_ == rt && active_ds_ == ds) return;
-    EndRendering();
+    EndRendering(PassEnd::Targets);
     uint32_t w = rt ? rt->w : ds->w, h = rt ? rt->h : ds->h;
     VkRenderPass rp = Pass(rt ? kBgra : VK_FORMAT_UNDEFINED, ds != nullptr, false, VK_IMAGE_LAYOUT_GENERAL);
     uint64_t key = uint64_t(rt ? rt->data : ds->data) | uint64_t(w) << 32 | uint64_t(h) << 48;
@@ -1649,7 +1666,7 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
 
 void VulkanBackend::BeginRenderingView(VkImageView view, VkFormat fmt, VkImageLayout layout, uint32_t w, uint32_t h,
                                        bool clear) {
-    EndRendering();
+    EndRendering(PassEnd::Auxiliary);
     VkRenderPass rp = Pass(fmt, false, clear, layout);
     BeginPass(rp, Framebuffer(rp, view, VK_NULL_HANDLE, w, h), w, h, uint64_t(w) << 32 | uint64_t(h) << 48);
     active_ = true;
@@ -1657,10 +1674,18 @@ void VulkanBackend::BeginRenderingView(VkImageView view, VkFormat fmt, VkImageLa
     active_rt_ = active_ds_ = nullptr;
 }
 
-void VulkanBackend::EndRendering() {
+void VulkanBackend::EndRendering(PassEnd reason) {
     if (!active_) return;
+    if (profile_) stats_.pass_ends[size_t(reason)]++;
+    if (trace_passes_) {
+        const char* names[] = {"targets", "auxiliary", "feedback", "copy", "readback", "resize", "present", "submit"};
+        static_assert(std::size(names) == size_t(PassEnd::Count));
+        LOGI("vk-trace: end reason=%s color=%08X depth=%08X draws=%u", names[size_t(reason)],
+             active_rt_ ? active_rt_->data : 0, active_ds_ ? active_ds_->data : 0, trace_draws_);
+    }
     vkCmdEndRenderPass(Cur().cmd);
-    GlobalBarrier();
+    if (narrow_barriers_) RenderPassBarrier(Cur().cmd);
+    else GlobalBarrier();
     if (timing_pass_) {
         Frame& f = Cur();
         assert(f.timed_count < kTimedPasses);
@@ -1703,7 +1728,7 @@ Target* VulkanBackend::EnsureTarget(const Surface& s, bool depth) {
     if (it != targets_.end() && it->second.gw == gw && it->second.gh == gh) return &it->second;
     if (it != targets_.end()) {
         Target& old = it->second;
-        if (active_rt_ == &old || active_ds_ == &old) EndRendering();
+        if (active_rt_ == &old || active_ds_ == &old) EndRendering(PassEnd::Resize);
         if (draw_rt_ == &old) draw_rt_ = nullptr;
         if (draw_ds_ == &old) draw_ds_ = nullptr;
         Release(old.im);
@@ -1765,13 +1790,15 @@ void VulkanBackend::UploadTarget(Target& t, const Surface& s) {
     if (!CreatePixelImage(tmp, px, pitch, d.width, d.height)) return;
     BeginRenderingView(t.im.view, kBgra, VK_IMAGE_LAYOUT_GENERAL, t.w, t.h, false);
     SetViewport(0, 0, float(t.w), float(t.h));
+    VkRect2D all{{0, 0}, {t.w, t.h}};
+    vkCmdSetScissor(Cur().cmd, 0, 1, &all);
     BlitArgs b;
     b.src = tmp.view;
     b.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     b.alpha = true;
     b.over = over;
     Blit(b);
-    EndRendering();
+    EndRendering(PassEnd::Auxiliary);
     Release(tmp);
     t.drawn = true;
     t.epoch = DirtyEpoch(t.data);
@@ -1780,7 +1807,7 @@ void VulkanBackend::UploadTarget(Target& t, const Surface& s) {
 
 // the console reads the pixels it is about to overwrite: the draw gets a copy
 VkImageView VulkanBackend::EnsureFeedbackCopy(Target& t) {
-    EndRendering();
+    EndRendering(PassEnd::Feedback);
     if (!t.fb.image) {
         ImageDesc d{t.im.fmt, t.w, t.h};
         d.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -1824,6 +1851,12 @@ void VulkanBackend::BindTargetTexture(const State& s, int stage, const TextureDe
         info.flags |= kTexWide;
     }
     if (t.depth) info.shadow = ShadowDepthKind(d.format);
+    if (trace_passes_) {
+        LOGI("vk-trace: sample stage=%d target=%08X depth=%u dst=%08X self=%u ps=%08X modes=%05X ffop=%u wmask=%08X",
+             stage, t.data, uint32_t(t.depth), draw_rt_ ? draw_rt_->data : 0, uint32_t(&t == draw_rt_),
+             s.ps ? s.ps->handle : 0, s.rs[kRsPsTextureModes], s.tss[size_t(stage)][kTssColorOp],
+             SimpleState(s, kMColorWriteEnable));
+    }
     stages.bind[stage] = {&t == draw_rt_ ? EnsureFeedbackCopy(t) : t.im.view, VK_IMAGE_LAYOUT_GENERAL};
 }
 
@@ -2417,6 +2450,7 @@ void VulkanBackend::Blit(const BlitArgs& b) {
     BindSet(cb, sizeof(c), cb, sizeof(c), views, smp);
     vkCmdDraw(cmd, 4, 1, 0, 0);
     if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
+    if (trace_passes_) trace_draws_++;
 }
 
 // ---- the title's calls
@@ -2442,7 +2476,12 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
 
     DrawTextures stages;
     bool reads_depth = false;
+    uint32_t sampled = skip_unused_stages_ ? SampledTextureStages(s) : 0xF;
     for (int i = 0; i < 4; i++) {
+        if (!(sampled & (1u << i))) {
+            if (profile_ && s.textures[size_t(i)]) stats_.unused_stages++;
+            continue;
+        }
         BindTexture(s, i, stages);
         reads_depth |= active_ds_ && stages.bind[i].view == active_ds_->im.view;
     }
@@ -2529,6 +2568,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         offs[i] = vb.off;
     }
     if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
+    if (trace_passes_) trace_draws_++;
     if (a.buffer_count) vkCmdBindVertexBuffers(cmd, 0, a.buffer_count, bufs, offs);
     if (a.index_count) {
         uint32_t ibytes = a.index_count * (a.index16 ? 2 : 4);
@@ -2559,6 +2599,7 @@ void VulkanBackend::Clear(const State& s, uint32_t count, const uint8_t* rects, 
         use_rt = active_rt_;
         use_ds = active_ds_;
     }
+    bool new_pass = !active_ || other_ || active_rt_ != use_rt || active_ds_ != use_ds;
     BeginRendering(use_rt, use_ds);
     Target* t = use_rt ? use_rt : use_ds;
     float sc = float(t->w) / (rt ? rt->gw : ds->gw);
@@ -2595,6 +2636,19 @@ void VulkanBackend::Clear(const State& s, uint32_t count, const uint8_t* rects, 
             n++;
         }
     }
+    if (profile_ && n) {
+        bool full = FullAttachmentClear(rs.data(), rs.size(), t->w, t->h);
+        stats_.clears++;
+        if (new_pass && full) {
+            stats_.full_clear_starts++;
+            uint64_t pixels = uint64_t(t->w) * t->h;
+            for (uint32_t i = 0; i < n; i++) {
+                if (at[i].aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) stats_.clear_color_pixels += pixels;
+                if (at[i].aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) stats_.clear_depth_pixels += pixels;
+                if (at[i].aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) stats_.clear_stencil_pixels += pixels;
+            }
+        }
+    }
     if (n) vkCmdClearAttachments(Cur().cmd, n, at, uint32_t(rs.size()), rs.data());
 }
 
@@ -2612,7 +2666,7 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
     }
     Target* dst_t = EnsureTarget(dst, false);
     if (!dst_t || src_t == dst_t) return;
-    EndRendering();
+    EndRendering(PassEnd::Copy);
     float sc = float(dst_t->w) / dst_t->gw;
     auto scaled = [&](int32_t v) { return uint32_t(uint32_t(v) * sc); };
     std::vector<VkImageCopy> regions;
@@ -2690,7 +2744,7 @@ void VulkanBackend::Sync(uint32_t data, uint32_t) {
 // the target as a BGRA image at the console's size, shrunk into down (made when empty) when it is upscaled; outside
 // any pass, null when it fails
 VkImage VulkanBackend::GuestSizedSource(Target& t, Image& down) {
-    EndRendering();
+    EndRendering(PassEnd::Readback);
     if (t.w == t.gw && t.h == t.gh) return t.im.image;
     if (!down.image) {
         ImageDesc d{kBgra, t.gw, t.gh};
@@ -2707,7 +2761,7 @@ VkImage VulkanBackend::GuestSizedSource(Target& t, Image& down) {
     b.alpha = true;
     b.taps = uint32_t(std::ceil(float(t.w) / t.gw - 1e-3f));
     Blit(b);
-    EndRendering();
+    EndRendering(PassEnd::Readback);
     return down.image;
 }
 
@@ -2886,6 +2940,15 @@ void VulkanBackend::LogStats() {
          (unsigned long long)s.gpu_samples, s.draws / n, s.sets / n, s.hits / n, 10.0 * s.sets / n,
          s.upload_bytes / n / (1024 * 1024), s.passes / n, (unsigned long long)s.flushes, (unsigned long long)s.syncs,
          (unsigned long long)s.shaders, s.shader_ms, (unsigned long long)s.pipelines, s.pipeline_ms);
+    LOGI("vk-lifetime: ends/frame targets=%.1f auxiliary=%.1f feedback=%.1f copy=%.1f readback=%.1f resize=%.1f "
+         "present=%.1f submit=%.1f clears=%.1f full-start=%.1f clear-Mpixels color=%.3f depth=%.3f stencil=%.3f",
+         s.pass_ends[0] / n, s.pass_ends[1] / n, s.pass_ends[2] / n, s.pass_ends[3] / n,
+         s.pass_ends[4] / n, s.pass_ends[5] / n, s.pass_ends[6] / n, s.pass_ends[7] / n,
+         s.clears / n, s.full_clear_starts / n, s.clear_color_pixels / n / 1e6,
+         s.clear_depth_pixels / n / 1e6, s.clear_stencil_pixels / n / 1e6);
+    LOGI("vk-stages: skip-unused=%s skipped/frame=%.1f", skip_unused_stages_ ? "on" : "off", s.unused_stages / n);
+    LOGI("vk-barriers: pass-end=%s pass-timestamps=%s", narrow_barriers_ ? "narrow" : "global",
+         profile_passes_ ? "on" : "off");
     std::vector<std::pair<uint64_t, PassStats>> top(pass_stats_.begin(), pass_stats_.end());
     std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
     LOGI("vk-passes: sampled=%zu gpu-submissions=%llu (first %u passes per submission)",
@@ -2900,6 +2963,10 @@ void VulkanBackend::LogStats() {
     pass_stats_.clear();
     stats_ = {};
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
+    skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
+    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
+    // Trace one frame per report while requested; exclude trace windows from benchmarks.
+    trace_passes_ = DebugFlag("debug.scda.vk_trace");
 }
 
 // Called between frames, after the old frame was submitted. Retire its images with the new frame, not while the
@@ -2938,7 +3005,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
     if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
     if (const app::Settings& set = app::Get(); (set.brightness << 8 | set.contrast) != ramp_set_)
         UploadGammaRamp(set.brightness, set.contrast);
-    EndRendering();
+    EndRendering(PassEnd::Present);
     uint32_t img = kNone;
     if (!AcquireImage(img)) img = kNone;
     VkCommandBuffer cmd = Cur().cmd;
@@ -2948,7 +3015,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
         BeginRenderingView(swap_views_[img], swap_fmt_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, swap_w_, swap_h_, true);
         if (t) PresentBlit(*t, pillarbox);
-        EndRendering();
+        EndRendering(PassEnd::Present);
         ImageBarrier(cmd, swap_images_[img], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
@@ -2966,6 +3033,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
         VkResult r = vkQueuePresentKHR(queue_, &pi);
         if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_ERROR_SURFACE_LOST_KHR || r == VK_SUBOPTIMAL_KHR) recreate_ = true;
     }
+    trace_passes_ = false;
     presents_++;
     presents_seen_.store(presents_);
     frame_++;

@@ -355,7 +355,7 @@ std::string TexFetch(const PixelKey& k, int i) {
     const char* dotmap[] = {"dot01", "dotd3d", "dotgl", "dotm11", "dot01", "dot01", "dot01", "dot01"};
     std::string norm = (t.rect ? F(" / texsize[%d].xy", i) : "") + F(" + texsize[%d].zw", i);
     auto tex2d = [&](const std::string& uv) {
-        if (t.flags & kTexWide) return F("spreadtap(tex%d, smp%d, %s, spread[%d], %s)", i, i, uv.c_str(), i, (t.flags & kTexHdr) ? "hdr.y" : "1");
+        if (t.flags & kTexWide) return F("spreadtap%d(%s, spread[%d], %s)", i, uv.c_str(), i, (t.flags & kTexHdr) ? "hdr.y" : "1");
         return F("tex%d.Sample(smp%d, %s)", i, i, uv.c_str());
     };
     // a normalization cube's colour is the direction itself, exact instead of 64 texels a face
@@ -381,13 +381,13 @@ std::string TexFetch(const PixelKey& k, int i) {
         case 0: return F("float4 t%d = float4(0,0,0,1);\n", i);
         case 1:  // project 2d
             if (t.shadow)
-                return F("float4 t%d = shadow(tex%d, smp%d, (pT%d.xy / pT%d.w)%s, 0, %d);\n", i, i, i, i, i,
+                return F("float4 t%d = shadow%d((pT%d.xy / pT%d.w)%s, 0, %d);\n", i, i, i, i,
                          norm.c_str(), t.shadow);
             return F("float4 t%d = %s;\n", i, sample2(F("pT%d.xy / pT%d.w", i, i)).c_str());
         case 2:  // project 3d
             if (t.shadow)
-                return F("float4 t%d = shadow(tex%d, smp%d, (pT%d.xy / pT%d.w)%s, pT%d.z / pT%d.w, %d);\n", i, i,
-                         i, i, i, norm.c_str(), i, i, t.shadow);
+                return F("float4 t%d = shadow%d((pT%d.xy / pT%d.w)%s, pT%d.z / pT%d.w, %d);\n", i, i,
+                         i, i, norm.c_str(), i, i, t.shadow);
             return F("float4 t%d = %s;\n", i, sample3(F("pT%d.xyz / pT%d.w", i, i)).c_str());
         case 3: return F("float4 t%d = %s;\n", i, sample3(F("pT%d.xyz", i)).c_str());
         case 4: return F("float4 t%d = pT%d;\n", i, i);
@@ -438,21 +438,6 @@ float3 dot01(float4 c) { return c.rgb; }
 float3 dotd3d(float4 c) { return float3(sgn1(c.r), sgn1(c.g), sgn1(c.b)); }
 float3 dotgl(float4 c) { return float3(sgn2(c.r), sgn2(c.g), sgn2(c.b)); }
 float3 dotm11(float4 c) { return float3(sgn3(c.r), sgn3(c.g), sgn3(c.b)); }
-// the sampler compares, a linear filter blends the four results like the console does
-float4 shadow(Texture2D<float> t, SamplerComparisonState s, float2 uv, float z, int fmt) {
-    float mx = fmt == 2 ? 65535.0 : 16777215.0;
-    return t.SampleCmpLevelZero(s, uv, clamp(z, 0, mx) / mx).xxxx;
-}
-float4 spreadtap(Texture2D t, SamplerState s, float2 uv, float4 w, float m) {
-    float4 c = 0;
-    int n = (int)w.z;
-    for (int y = 0; y < n; y++)
-        for (int x = 0; x < n; x++) {
-            float4 v = t.SampleLevel(s, uv + w.xy * (float2(x, y) - (n - 1) * 0.5), 0);
-            c += float4(saturate(v.rgb * m), v.a);
-        }
-    return c / (n * n);
-}
 void alphatest(float a) {
     int f = (int)misc.y;
     int v = (int)round(a * 255), r = (int)misc.x;
@@ -773,6 +758,27 @@ std::string PixelHlsl(const PixelKey& k) {
         const char* type = t.shadow ? "Texture2D<float>" : t.kind == kTex3D ? "Texture3D" : t.kind == kTexCube ? "TextureCube" : "Texture2D";
         s += F("%s tex%d : register(t%d);\n%s smp%d : register(s%d);\n", type, i, i, t.shadow ? "SamplerComparisonState" : "SamplerState", i, i);
     }
+    // Direct global resources avoid illegal opaque-object stores without SPIRV-Tools HLSL legalization.
+    for (int i = 0; i < 4; i++) {
+        if (k.tex[i].shadow) s += F(R"(
+float4 shadow%d(float2 uv, float z, int fmt) {
+    float mx = fmt == 2 ? 65535.0 : 16777215.0;
+    return tex%d.SampleCmpLevelZero(smp%d, uv, clamp(z, 0, mx) / mx).xxxx;
+}
+)", i, i, i);
+        else if (k.tex[i].kind == kTex2D && (k.tex[i].flags & kTexWide)) s += F(R"(
+float4 spreadtap%d(float2 uv, float4 w, float m) {
+    float4 c = 0;
+    int n = (int)w.z;
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++) {
+            float4 v = tex%d.SampleLevel(smp%d, uv + w.xy * (float2(x, y) - (n - 1) * 0.5), 0);
+            c += float4(saturate(v.rgb * m), v.a);
+        }
+    return c / (n * n);
+}
+)", i, i, i);
+    }
     s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
     s += "    float4 pT0 = i.t0, pT1 = i.t1, pT2 = i.t2, pT3 = i.t3;\n";
     s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
@@ -827,10 +833,10 @@ std::string PixelHlsl(const PixelKey& k) {
             std::string norm = (t.rect ? F(" / texsize[%d].xy", i) : "") + F(" + texsize[%d].zw", i);
             std::string uv = (k.proj >> i) & 1 ? F("(pT%d.xy / pT%d.w)%s", i, i, norm.c_str()) : F("pT%d.xy%s", i, norm.c_str());
             if (t.shadow)
-                body += F("float4 t%d = shadow(tex%d, smp%d, (pT%d.xy / pT%d.w)%s, pT%d.z / pT%d.w, %d);\n", i, i,
-                          i, i, i, norm.c_str(), i, i, t.shadow);
+                body += F("float4 t%d = shadow%d((pT%d.xy / pT%d.w)%s, pT%d.z / pT%d.w, %d);\n", i, i,
+                          i, i, norm.c_str(), i, i, t.shadow);
             else if (t.kind == kTex2D && (t.flags & kTexWide))
-                body += F("float4 t%d = spreadtap(tex%d, smp%d, %s, spread[%d], %s);\n", i, i, i, uv.c_str(), i, (t.flags & kTexHdr) ? "hdr.y" : "1");
+                body += F("float4 t%d = spreadtap%d(%s, spread[%d], %s);\n", i, i, uv.c_str(), i, (t.flags & kTexHdr) ? "hdr.y" : "1");
             else if (t.kind == kTex2D) body += F("float4 t%d = tex%d.Sample(smp%d, %s);\n", i, i, i, uv.c_str());
             else if (t.kind == kTexCube && (t.flags & kTexNormCube))
                 body += F("float4 t%d = float4(normalize(pT%d.xyz) * 0.5 + 0.5, tex%d.Sample(smp%d, pT%d.xyz).a);\n", i, i, i, i, i);

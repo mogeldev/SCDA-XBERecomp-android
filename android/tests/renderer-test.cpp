@@ -2,6 +2,9 @@
 #include "android/descriptor_sets.h"
 #include "android/frame_fences.h"
 #include "android/image_memory.h"
+#include "android/pass_barrier.h"
+#include "android/render_clears.h"
+#include "android/texture_stages.h"
 #include "android/vertex_hlsl.h"
 #include "gpu/shaders.h"
 #include <glslang/Public/ShaderLang.h>
@@ -19,6 +22,23 @@ static std::map<VkFence, bool> pending;
 static unsigned allocations = 0, waits = 0;
 static bool fail_alloc = false, fail_block = false, fail_submit = false, fail_wait = false;
 static VkImage dedicated_image = VK_NULL_HANDLE;
+static unsigned pass_barriers = 0;
+
+VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer, VkPipelineStageFlags src, VkPipelineStageFlags dst,
+    VkDependencyFlags flags, uint32_t n, const VkMemoryBarrier* barriers, uint32_t buffers,
+    const VkBufferMemoryBarrier*, uint32_t images, const VkImageMemoryBarrier*) {
+    constexpr VkPipelineStageFlags attachments = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    assert(src == (attachments | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)); // WAR: fragment reads finish too
+    assert(dst == (src | VK_PIPELINE_STAGE_TRANSFER_BIT));
+    assert(!flags && n == 1 && !buffers && !images); // global scope covers aliases, not BY_REGION
+    assert(barriers[0].sType == VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+    assert(barriers[0].srcAccessMask == (VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT));
+    assert(barriers[0].dstAccessMask == (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT));
+    ++pass_barriers;
+}
 
 VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice, const VkMemoryAllocateInfo* a, const VkAllocationCallbacks*, VkDeviceMemory* out) {
     if (fail_alloc || (fail_block && a->allocationSize == (32ull << 20))) return VK_ERROR_OUT_OF_DEVICE_MEMORY;
@@ -43,6 +63,50 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(VkDevice, uint32_t n, const VkFen
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(VkDevice, uint32_t n, const VkFence* f) {
     assert(n == 1 && pending.at(*f)); pending[*f] = false; return VK_SUCCESS;
+}
+
+static void TextureStageTest() {
+    gpu::State fixed{};
+    fixed.tss[0][gpu::kTssColorOp] = 4;
+    fixed.tss[1][gpu::kTssColorOp] = 1;
+    fixed.tss[2][gpu::kTssColorOp] = 4;
+    assert(gpu::SampledTextureStages(fixed) == 1); // disabled stage terminates the fixed-function chain
+    fixed.tss[1][gpu::kTssColorOp] = 4;
+    assert(gpu::SampledTextureStages(fixed) == 7);
+    fixed.tss[0][gpu::kTssColorOp] = 0;
+    assert(gpu::SampledTextureStages(fixed) == 0);
+    for (uint32_t mode = 0; mode < 32; mode++) {
+        bool no_fetch = mode == 0 || mode == 4 || mode == 5 || mode == 10 || mode == 17;
+        assert(gpu::TextureModeSamples(mode) == !no_fetch);
+        if (!no_fetch) continue;
+        for (uint32_t stage = 0; stage < 4; stage++) {
+            gpu::State state{};
+            state.ps = std::make_shared<gpu::PixelShader>();
+            state.rs[gpu::kRsPsTextureModes] = mode << (stage * 5);
+            gpu::TexInfo bound[4]{}, unbound[4]{};
+            bound[stage].kind = gpu::kTex2D;
+            assert(gpu::SampledTextureStages(state) == 0);
+            auto before = gpu::MakePixelKey(state, bound), after = gpu::MakePixelKey(state, unbound);
+            assert(before.tex_modes == after.tex_modes); // coordinate/discard stages must not disappear
+            for (auto key : {before, after}) {
+                std::string source = gpu::PixelHlsl(key);
+                assert(source.find("tex" + std::to_string(stage) + ".Sample") == std::string::npos);
+            }
+        }
+    }
+}
+
+static void ClearTest() {
+    VkClearRect r{{{0, 0}, {813, 610}}, 0, 1};
+    assert(gpu::FullAttachmentClear(&r, 1, 813, 610));
+    assert(!gpu::FullAttachmentClear(nullptr, 0, 813, 610));
+    assert(!gpu::FullAttachmentClear(&r, 2, 813, 610));
+    assert(!gpu::FullAttachmentClear(&r, 1, 814, 610));
+    r.rect.offset.x = 1; assert(!gpu::FullAttachmentClear(&r, 1, 813, 610)); r.rect.offset.x = 0;
+    r.rect.offset.y = -1; assert(!gpu::FullAttachmentClear(&r, 1, 813, 610)); r.rect.offset.y = 0;
+    r.rect.extent.height--; assert(!gpu::FullAttachmentClear(&r, 1, 813, 610)); r.rect.extent.height++;
+    r.baseArrayLayer = 1; assert(!gpu::FullAttachmentClear(&r, 1, 813, 610)); r.baseArrayLayer = 0;
+    r.layerCount = 2; assert(!gpu::FullAttachmentClear(&r, 1, 813, 610));
 }
 
 static void DescriptorTest() {
@@ -184,12 +248,12 @@ static void FenceTest() {
     fail_wait = false; assert(f.Begin(0));
 }
 
-static void CompileVertex(const std::string& text) {
-    glslang::TShader shader(EShLangVertex);
+static std::vector<uint32_t> CompileShader(const std::string& text, EShLanguage stage) {
+    glslang::TShader shader(stage);
     const char* src = text.c_str();
     shader.setStrings(&src, 1);
     shader.setEntryPoint("main"); shader.setSourceEntryPoint("main");
-    shader.setEnvInput(glslang::EShSourceHlsl, EShLangVertex, glslang::EShClientVulkan, 100);
+    shader.setEnvInput(glslang::EShSourceHlsl, stage, glslang::EShClientVulkan, 100);
     shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_1);
     shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
     shader.setHlslIoMapping(true); shader.setAutoMapLocations(true);
@@ -201,7 +265,12 @@ static void CompileVertex(const std::string& text) {
     if (!ok) std::fprintf(stderr, "%s\n%s\n%s\n", shader.getInfoLog(), program.getInfoLog(), text.c_str());
     assert(ok);
     std::vector<uint32_t> spv;
-    glslang::GlslangToSpv(*program.getIntermediate(EShLangVertex), spv);
+    glslang::GlslangToSpv(*program.getIntermediate(stage), spv);
+    return spv;
+}
+
+static void CompileVertex(const std::string& text) {
+    auto spv = CompileShader(text, EShLangVertex);
     uint32_t point = 0; bool stored = false;
     for (size_t i = 5; i < spv.size(); i += spv[i] >> 16) {
         // OpDecorate <id> BuiltIn PointSize
@@ -228,10 +297,34 @@ static void ShaderTest() {
     for (size_t p; (p = src.find("1.#INF")) != std::string::npos;) src.replace(p, 6, "asfloat(0x7F800000)");
     CompileVertex(src);
     assert(gpu::VulkanVertexHlsl("invalid", false, false, false).empty());
+    for (bool programmable : {false, true}) for (bool shadow : {false, true})
+    for (uint32_t stage = 0; stage < 4; stage++) for (bool quad : {false, true}) {
+        gpu::PixelKey key{};
+        key.programmable = programmable;
+        key.quad = quad;
+        for (uint32_t i = 0; i <= stage; i++) key.ff[i][0] = key.ff[i][4] = 4;
+        key.tex[stage].kind = gpu::kTex2D;
+        key.tex[stage].shadow = shadow ? (stage % 2 + 1) : 0;
+        key.tex[stage].flags = shadow ? 0 : gpu::kTexWide;
+        key.tex_modes = (shadow ? 2u : 1u) << (stage * 5);
+        auto text = gpu::PixelHlsl(key);
+        assert(text.find("shadow(Texture") == std::string::npos);
+        assert(text.find("spreadtap(Texture") == std::string::npos);
+        auto spv = CompileShader(text, EShLangFragment);
+        std::map<uint32_t, bool> opaque;
+        std::map<uint32_t, uint32_t> value_type;
+        for (size_t i = 5; i < spv.size(); i += spv[i] >> 16) {
+            uint32_t op = spv[i] & 65535;
+            if (op == 25 || op == 26 || op == 27) opaque[spv[i + 1]] = true; // image/sampler/sampled image
+            if (op == 61 || op == 55 || op == 83) value_type[spv[i + 2]] = spv[i + 1]; // load/parameter/copy
+            if (op == 62) assert(!opaque[value_type[spv[i + 2]]]); // OpStore must not store a resource
+        }
+    }
     glslang::FinalizeProcess();
 }
 
 int main() {
-    DescriptorTest(); MemoryTest(); FenceTest(); ShaderTest();
-    std::puts("PASS: descriptor keys/reuse/frame reset, image pooling/alignment/reuse/dedicated/OOM, frame fences/reuse/thread race/errors, SPIR-V PointSize stores");
+    gpu::RenderPassBarrier({}); assert(pass_barriers == 1);
+    TextureStageTest(); ClearTest(); DescriptorTest(); MemoryTest(); FenceTest(); ShaderTest();
+    std::puts("PASS: pass-barrier RAW/WAW/WAR/transfer scopes, unused texture stages/coordinate modes, full-clear eligibility, descriptor keys/reuse/frame reset, image pooling/alignment/reuse/dedicated/OOM, frame fences/reuse/thread race/errors, SPIR-V PointSize and resource-helper stores");
 }
