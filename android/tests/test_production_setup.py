@@ -34,7 +34,8 @@ class ProductionSetupTest(unittest.TestCase):
 
     def test_legacy_installs_and_prebuilt_fallback_retained(self):
         setup = (JAVA / 'SetupActivity.java').read_text()
-        self.assertIn('if (files != null && ready(files))', setup)
+        self.assertIn('boolean installed = files != null && ready(files)', setup)
+        self.assertIn('if (installed) setup.showReady()', setup)
         self.assertIn('GameImport.isInstalled(files)', setup)
         self.assertIn('new File(files, "assets")', setup)
         alias = ET.parse(ROOT / 'android/src/main/AndroidManifest.xml').find('.//activity-alias')

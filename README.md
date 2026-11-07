@@ -17,7 +17,7 @@ Unofficial **original Xbox → Android ARM64** port using static recompilation, 
 3. Keep setup open while it compiles on your phone—about **6–8 minutes for compilation** on the tested device, plus import time. Back cancels; **Compile / resume** retains verified work.
 4. Play with a controller. Start at **50% render resolution**.
 
-Windows is optional: the [Windows builder](tools/android-builder/README.md) still produces compatible prebuilt ZIPs. **Uninstalling or clearing app data deletes saves/settings.** Updates require a matching signing certificate.
+The app opens as a launcher (Play, Check for updates). **Check for updates** asks GitHub only when tapped and opens the newest release page (pre-releases included); nothing is downloaded or installed automatically. The Windows builder has the same button. Windows is optional: the [Windows builder](tools/android-builder/README.md) still produces compatible prebuilt ZIPs; use the builder of the same version as the app. **Uninstalling or clearing app data deletes saves/settings.** Updates require a matching signing certificate.
 
 ## Status
 

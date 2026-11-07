@@ -348,8 +348,11 @@ internal sealed class BuilderWindow : Window
         openLog.Click += delegate {
             if (logPath != null && File.Exists(logPath)) Process.Start("notepad.exe", Builder.Quote(logPath));
         };
+        Button updates = new Button { Content = "Check for updates", Margin = new Thickness(0, 0, 8, 0) };
+        updates.Click += delegate { CheckUpdates(updates, version); };
         actions.Children.Add(licenses);
         actions.Children.Add(openLog);
+        actions.Children.Add(updates);
         footer.Children.Add(actions);
         footer.Children.Add(new TextBlock { Text = "ISO support: extract-xiso / XboxDev. This product includes software developed by in <in@fishtank.com>.",
             FontSize = 11, Foreground = Brush("#B9C7DA"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
@@ -360,6 +363,36 @@ internal sealed class BuilderWindow : Window
         logTimer.Start();
         Closed += delegate { logTimer.Stop(); };
         Closing += OnClosing;
+    }
+
+    // Only on request: the newest GitHub release (pre-releases included) against this builder's version.
+    private void CheckUpdates(Button button, string version)
+    {
+        button.IsEnabled = false;
+        button.Content = "Checking...";
+        Task.Run(() =>
+        {
+            try { return Updates.Newest(Updates.Fetch(version)); }
+            catch (Exception) { return "\0"; }
+        }).ContinueWith(task =>
+        {
+            button.IsEnabled = true;
+            button.Content = "Check for updates";
+            string tag = task.Result;
+            if (tag == "\0")
+                MessageBox.Show(this, "Could not reach GitHub. Check the internet connection and try again.", Title,
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            else if (tag != null && Updates.IsNewer(tag, version))
+            {
+                if (MessageBox.Show(this, "Version " + tag.TrimStart('v') + " is available. You have " + version + ".\n\n"
+                        + "Download the builder and the APK of that version together; the app only imports game ZIPs from "
+                        + "the builder of its own version. Open the release page?", Title, MessageBoxButton.YesNo,
+                        MessageBoxImage.Information) == MessageBoxResult.Yes)
+                    Process.Start(Updates.Page(tag));
+            }
+            else MessageBox.Show(this, "You have the newest version (" + version + ").", Title, MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private static Color Color(string hex) { return (Color)ColorConverter.ConvertFromString(hex); }
@@ -528,5 +561,71 @@ internal sealed class BuilderWindow : Window
             MessageBox.Show(this, "Please wait for the build to finish before closing. Completed objects are kept if a build fails.",
                 Title, MessageBoxButton.OK, MessageBoxImage.Information);
         }
+    }
+}
+
+// The GitHub release check; android/.../UpdateCheck.java compares the same way.
+internal static class Updates
+{
+    private const string Repository = "mogeldev/SCDA-XBERecomp-android";
+    private static readonly System.Text.RegularExpressions.Regex Tag =
+        new System.Text.RegularExpressions.Regex(@"""tag_name""\s*:\s*""([^""]+)""");
+    // RELEASING.md versions: 0.1.0-testing.N, then 0.1.0-rc.N, then 0.1.0
+    private static readonly System.Text.RegularExpressions.Regex Version =
+        new System.Text.RegularExpressions.Regex(@"^v?(\d+)\.(\d+)\.(\d+)(?:-(testing|rc)\.(\d+))?$");
+
+    internal static string Page(string tag) { return "https://github.com/" + Repository + "/releases/tag/" + tag; }
+
+    // major, minor, patch, stage (testing < rc < stable), number; null for any other name
+    internal static long[] Parse(string version)
+    {
+        System.Text.RegularExpressions.Match m = Version.Match((version ?? "").Trim());
+        if (!m.Success) return null;
+        int stage = !m.Groups[4].Success ? 2 : m.Groups[4].Value == "rc" ? 1 : 0;
+        return new[] { long.Parse(m.Groups[1].Value), long.Parse(m.Groups[2].Value), long.Parse(m.Groups[3].Value), stage,
+            m.Groups[5].Success ? long.Parse(m.Groups[5].Value) : 0 };
+    }
+
+    private static int Compare(long[] a, long[] b)
+    {
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return a[i].CompareTo(b[i]);
+        return 0;
+    }
+
+    internal static string Newest(string json)
+    {
+        string best = null;
+        long[] bestVersion = null;
+        foreach (System.Text.RegularExpressions.Match m in Tag.Matches(json))
+        {
+            long[] version = Parse(m.Groups[1].Value);
+            if (version != null && (bestVersion == null || Compare(version, bestVersion) > 0))
+            {
+                best = m.Groups[1].Value;
+                bestVersion = version;
+            }
+        }
+        return best;
+    }
+
+    // an unknown own version counts every release as newer
+    internal static bool IsNewer(string tag, string current)
+    {
+        long[] mine = Parse(current);
+        return mine == null || Compare(Parse(tag), mine) > 0;
+    }
+
+    internal static string Fetch(string current)
+    {
+        System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+        System.Net.HttpWebRequest request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(
+            "https://api.github.com/repos/" + Repository + "/releases?per_page=30");
+        request.Timeout = 10000;
+        request.ReadWriteTimeout = 10000;
+        request.Accept = "application/vnd.github+json";
+        request.UserAgent = "SCDA-Android-Builder/" + current;
+        using (System.Net.WebResponse response = request.GetResponse())
+        using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+            return reader.ReadToEnd();
     }
 }

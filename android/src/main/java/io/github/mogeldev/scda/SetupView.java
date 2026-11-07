@@ -21,10 +21,10 @@ import android.widget.TextView;
 final class SetupView extends ScrollView {
     private static final int BG = 0xff080e0b, PANEL = 0xff111b15, GREEN = 0xffb2ef83;
     private static final int TEXT = 0xffedf4ee, MUTED = 0xffa9b8ae, BORDER = 0xff314537;
-    final Button select, folder, cancel;
+    final Button select, folder, cancel, play, update;
     final ProgressBar progress;
     final TextView status, percent;
-    private final TextView stage, workTitle;
+    private final TextView brand, title, subtitle, stage, workTitle;
     private final LinearLayout choices, importPage, workPage, content;
     private final FrameLayout center;
     private Boolean stacked;
@@ -39,7 +39,7 @@ final class SetupView extends ScrollView {
         center.addView(content, new FrameLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         addView(center, new ScrollView.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView brand = text("● ● ●   THIRD ECHELON / ANDROID", 11, GREEN, true);
+        brand = text("● ● ●   THIRD ECHELON / ANDROID", 11, GREEN, true);
         brand.setPadding(0, dp(4), 0, dp(12));
         content.addView(brand);
 
@@ -50,13 +50,14 @@ final class SetupView extends ScrollView {
         card.setPadding(dp(20), dp(16), dp(20), dp(12));
         importPage.addView(card);
         card.addView(text("SPLINTER CELL: DOUBLE AGENT", 11, GREEN, true));
-        TextView title = text("Import game", 28, TEXT, false);
+        title = text("Import game", 28, TEXT, false);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setPadding(0, dp(4), 0, dp(4));
         title.setAccessibilityHeading(true);
         card.addView(title);
-        card.addView(text(local ? "Choose your game source. Compilation runs on this device."
-            : "Select a ZIP from the matching Windows builder.", 14, MUTED, false));
+        subtitle = text(local ? "Choose your game source. Compilation runs on this device."
+            : "Select a ZIP from the matching Windows builder.", 14, MUTED, false);
+        card.addView(subtitle);
         stage = text("01  IMPORT      /      02  COMPILE      /      03  PLAY", 11, GREEN, true);
         stage.setPadding(0, dp(12), 0, dp(12));
         card.addView(stage);
@@ -66,6 +67,11 @@ final class SetupView extends ScrollView {
         card.addView(choices);
         select = button(local ? "Import game file\nISO / XISO · ZIP · 7z · RAR · TAR" : "Import game ZIP", true);
         choices.addView(select, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1));
+        // the launcher's main action once a game is installed (showReady)
+        play = button("Play", true);
+        play.setTextSize(18);
+        play.setVisibility(GONE);
+        choices.addView(play, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1));
         folder = local ? button("Select extracted folder\ndefault.xbe + Default/ + Media/", false) : null;
         if (folder != null) {
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1);
@@ -90,6 +96,11 @@ final class SetupView extends ScrollView {
             params.setMarginStart(dp(12));
             footer.addView(notice, params);
         }
+        update = button("Check for updates", false);
+        update.setTextSize(12);
+        LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1);
+        updateParams.setMarginStart(dp(12));
+        footer.addView(update, updateParams);
         card.addView(footer);
         TextView fine = text("Supported original Xbox game required. No game content included."
             + (local ? "\nISO: extract-xiso. This product includes software developed by in <in@fishtank.com>." : ""), 10, MUTED, false);
@@ -136,6 +147,19 @@ final class SetupView extends ScrollView {
     }
 
     boolean isWorkPageVisible() { return workPage.getVisibility() == VISIBLE; }
+
+    void version(String name) { brand.setText("● ● ●   THIRD ECHELON / ANDROID   ·   " + name); }
+
+    // Launcher page for an installed game: Play instead of the import choices.
+    void showReady() {
+        title.setText("Ready");
+        subtitle.setText("Your game is installed. Saves and settings stay on this device.");
+        stage.setText("01  IMPORT  ✓      /      02  COMPILE  ✓      /      03  PLAY");
+        select.setVisibility(GONE);
+        if (folder != null) folder.setVisibility(GONE);
+        play.setVisibility(VISIBLE);
+        play.requestFocus();
+    }
 
     void showImportPage() {
         workPage.setVisibility(GONE);
@@ -233,10 +257,12 @@ final class SetupView extends ScrollView {
         if (stacked == null || stack != stacked) {
             stacked = stack;
             choices.setOrientation(stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+            boolean before = false;  // a shown button before this one; Play replaces the import buttons
             for (int i = 0; i < choices.getChildCount(); i++) {
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     stack ? LayoutParams.MATCH_PARENT : 0, LayoutParams.WRAP_CONTENT, stack ? 0 : 1);
-                if (i != 0) { if (stack) params.topMargin = dp(10); else params.setMarginStart(dp(12)); }
+                if (before) { if (stack) params.topMargin = dp(10); else params.setMarginStart(dp(12)); }
+                before |= choices.getChildAt(i).getVisibility() != GONE;
                 choices.getChildAt(i).setLayoutParams(params);
             }
         }

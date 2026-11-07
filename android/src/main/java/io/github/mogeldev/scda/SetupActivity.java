@@ -36,11 +36,17 @@ public class SetupActivity extends Activity {
             GameImport.appVersion = null;
         }
         File files = getExternalFilesDir(null);
-        if (files != null && ready(files)) {
+        // The launcher always opens first; an installed game (also from older USB/ADB layouts) shows Play.
+        boolean installed = files != null && ready(files);
+        // The app icon while the game runs in the background returns to it; only a fresh start shows the launcher.
+        if (installed && SDLActivity.mCurrentNativeState != null) {
             launchGame();
             return;
         }
         setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses, this::cancelSetup);
+        setup.version(GameImport.appVersion != null ? GameImport.appVersion : "unknown version");
+        setup.update.setOnClickListener(view -> checkUpdates());
+        setup.play.setOnClickListener(view -> launchGame());
         select = setup.select;
         folder = setup.folder;
         progress = setup.progress;
@@ -71,6 +77,46 @@ public class SetupActivity extends Activity {
         else if (state != null && state.getBoolean("importing"))
             status.setText("The previous import was interrupted. Select the input again to retry.");
         select.requestFocus();
+        if (installed) setup.showReady();
+    }
+
+    // Only on request: asks GitHub for the newest release (pre-releases included) and offers its page.
+    private void checkUpdates() {
+        setup.update.setEnabled(false);
+        setup.update.setText("Checking…");
+        String current = GameImport.appVersion;
+        new Thread(() -> {
+            String message, newest = null;
+            try {
+                String tag = UpdateCheck.newest(UpdateCheck.fetch(current));
+                if (tag != null && UpdateCheck.isNewer(tag, current)) {
+                    newest = tag;
+                    message = "Version " + tag.replaceFirst("^v", "") + " is available. You have " + current + ".\n\n"
+                        + "Download the APK and the Windows builder of that version from its release page. "
+                        + "Install the APK over this app; do not uninstall it, or saves and settings are deleted.";
+                } else message = "You have the newest version (" + current + ").";
+            } catch (IOException | RuntimeException e) {
+                android.util.Log.w("SCDAUpdate", "Update check failed", e);
+                message = "Could not reach GitHub. Check the internet connection and try again.";
+            }
+            String text = message, tag = newest;
+            runOnUiThread(() -> {
+                if (isDestroyed() || isFinishing()) return;
+                setup.update.setEnabled(true);
+                setup.update.setText("Check for updates");
+                android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
+                    .setTitle(tag != null ? "Update available" : "Updates").setMessage(text);
+                if (tag != null) dialog.setPositiveButton("Open release page", (d, which) -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(UpdateCheck.page(tag))));
+                    } catch (ActivityNotFoundException e) {
+                        status.setText("No browser available. Open " + UpdateCheck.page(tag));
+                    }
+                }).setNegativeButton("Close", null);
+                else dialog.setPositiveButton("Close", null);
+                dialog.show();
+            });
+        }, "SCDA update check").start();
     }
 
     private void cancelSetup() {

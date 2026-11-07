@@ -57,6 +57,13 @@ function Invoke-Builder([string]$method, [object[]]$parameters) {
         throw "$method failed: $($error.Message)"
     }
 }
+$updates = $assembly.GetType('Updates', $true)
+function Test-Newer([string]$tag, [string]$current) { return $updates.GetMethod('IsNewer', $flags).Invoke($null, [object[]]@($tag, $current)) }
+Assert (Test-Newer 'v0.1.0-testing.10' '0.1.0-testing.9') 'Update check compares text, not numbers.'
+Assert (Test-Newer 'v0.1.0' '0.1.0-rc.2') 'Update check ranks rc above stable.'
+Assert (-not (Test-Newer 'v0.1.0-testing.2' '0.1.0-testing.2')) 'Update check offers the same version.'
+$json = '[{"tag_name":"v0.1.0-testing.1"},{"tag_name":"update-check-test"},{"tag_name":"v0.1.0-testing.3"}]'
+Assert ($updates.GetMethod('Newest', $flags).Invoke($null, [object[]]@($json)) -eq 'v0.1.0-testing.3') 'Wrong newest release.'
 Assert (Test-Path "$root/compiler/xbe_recomp.exe") 'Missing companion compiler.'
 Assert (Test-Path "$root/extract-xiso.exe") 'Missing extract-xiso tool.'
 Assert (Test-Path "$root/licenses/extract-xiso.txt") 'Missing extract-xiso license.'
