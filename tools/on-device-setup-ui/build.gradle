@@ -1,0 +1,17 @@
+plugins { id 'com.android.application' version '9.4.1' }
+layout.buildDirectory = file('../../out/setup-ui/build')
+android {
+    namespace = 'io.github.mogeldev.scda'
+    compileSdk = 36
+    defaultConfig {
+        applicationId = 'io.github.mogeldev.scda.setuppreview'
+        minSdk = 30
+        targetSdk = 36
+        versionCode = 1
+        versionName = 'ui-preview'
+    }
+    sourceSets.main {
+        java.srcDirs = ['src/main/java', '../../android/src/main/java']
+        java.includes = ['io/github/mogeldev/scda/SetupView.java', 'io/github/mogeldev/scda/SetupPreviewActivity.java']
+    }
+}
