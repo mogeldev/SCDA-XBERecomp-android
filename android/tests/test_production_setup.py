@@ -27,7 +27,7 @@ class ProductionSetupTest(unittest.TestCase):
 
     def test_debug_import_hook_not_in_production(self):
         for path in JAVA.glob('*.java'):
-            self.assertNotIn('test_import', path.read_text(), str(path))
+            self.assertNotIn('test_import', path.read_text(encoding='utf-8'), str(path))
         test = ROOT / 'tools/on-device-setup/src/main/java/io/github/mogeldev/scda/LocalSetupActivity.java'
         self.assertIn('extends OnDeviceSetupActivity', test.read_text())
         self.assertIn('test_import', test.read_text())
@@ -44,6 +44,19 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn('super.importSource(uri, external, machine, progress)', local)
         self.assertIn('Build.SUPPORTED_ABIS[0].equals("arm64-v8a")', local)
         self.assertIn('CompileCache.hash(nativeDir.resolve(name))', local)
+
+    def test_setup_layout_constraints(self):
+        view = (JAVA / 'SetupView.java').read_text(encoding='utf-8')
+        self.assertIn('available * 0.8f', view)
+        self.assertIn('extends ScrollView', view)
+        self.assertIn('fontScale', view)
+        self.assertIn('state_focused', view)
+        self.assertIn('setMinHeight(dp(48))', view)
+        self.assertIn('ACCESSIBILITY_LIVE_REGION_POLITE', view)
+        setup = (JAVA / 'SetupActivity.java').read_text(encoding='utf-8')
+        self.assertIn('WindowInsets.Type.displayCutout()', setup)
+        self.assertIn('this::showRequirements', setup)
+        self.assertIn('worker.interrupt()', setup)
 
     def test_policy_matches_probe(self):
         probe = ROOT / 'tools/on-device-probe/src/main/java/io/github/mogeldev/scda/compilerprobe/BuildJobs.java'

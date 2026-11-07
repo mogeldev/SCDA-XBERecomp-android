@@ -5,12 +5,9 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
@@ -29,6 +26,7 @@ public class SetupActivity extends Activity {
     private ProgressBar progress;
     private Thread worker;
     private boolean picking;
+    private SetupView setup;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -37,62 +35,31 @@ public class SetupActivity extends Activity {
             launchGame();
             return;
         }
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        int padding = (int) (24 * getResources().getDisplayMetrics().density);
-        layout.setPadding(padding, padding, padding, padding);
-        TextView title = new TextView(this);
-        title.setText("Splinter Cell: Double Agent — Setup");
-        title.setTextSize(24);
-        layout.addView(title);
-        TextView instructions = new TextView(this);
-        instructions.setText(supportsLocalCompilation()
-            ? "Import your own supported USA Xbox game: ISO/XISO, ZIP, 7z, RAR or TAR, "
-                + "or select an extracted game folder containing default.xbe, Default/ and Media/.\n\n"
-                + "Archives may contain one ISO or one extracted game folder. Encrypted and split archives are not supported.\n\n"
-                + "Compilation runs on this device and may take several minutes. Keep this screen open. "
-                + "Back cancels; completed compiler work can be resumed. A matching prebuilt-library ZIP also works. "
-                + "Saves and settings will not be changed. Gameplay requires a controller."
-            : "Import a ZIP made from your own Xbox game and matching player-builder output.\n\n"
-            + "ZIP root: libscda_code.so and assets/\n"
-            + "Inside assets/: default.xbe, Default/ and Media/\n\n"
-            + "Keep this screen open during import. You need enough free space for the extracted game. "
-            + "Saves and settings will not be changed. Gameplay requires a controller.");
-        instructions.setTextSize(16);
-        instructions.setPadding(0, padding, 0, padding);
-        layout.addView(instructions);
-        select = new Button(this);
+        setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses);
+        select = setup.select;
+        folder = setup.folder;
+        progress = setup.progress;
+        status = setup.status;
         select.setText(pendingBuild(files) ? "Compile / resume" : importLabel());
         select.setOnClickListener(view -> {
             if (pendingBuild(getExternalFilesDir(null))) importZip(null);
             else pickZip();
         });
-        layout.addView(select);
-        if (supportsLocalCompilation()) {
-            folder = new Button(this);
-            folder.setText("Import extracted game folder");
+        if (folder != null) {
             folder.setOnClickListener(view -> pickFolder());
             folder.setVisibility(pendingBuild(files) ? android.view.View.GONE : android.view.View.VISIBLE);
-            layout.addView(folder);
-            TextView licenses = new TextView(this);
-            licenses.setText("ISO support: extract-xiso. This product includes software developed by in <in@fishtank.com>.\nOpen import-tool licenses");
-            licenses.setPadding(0, padding / 2, 0, padding / 2);
-            licenses.setFocusable(true);
-            licenses.setOnClickListener(view -> showImportLicenses());
-            layout.addView(licenses);
         }
-        progress = new ProgressBar(this);
-        progress.setVisibility(android.view.View.GONE);
-        layout.addView(progress);
-        status = new TextView(this);
-        status.setTextSize(16);
-        status.setPadding(0, padding, 0, 0);
-        layout.addView(status);
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.addView(layout);
-        setContentView(scroll);
+        if (pendingBuild(files)) setup.phase("02  COMPILE / RESUME");
+        // Keep content inside system bars/cutouts before applying the 80% width limit.
+        getWindow().setDecorFitsSystemWindows(false);
+        setup.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
+                | android.view.WindowInsets.Type.displayCutout());
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            return insets;
+        });
+        setContentView(setup);
+        setup.requestApplyInsets();
         picking = state != null && state.getBoolean("picking");
         setSelectionEnabled(!picking && files != null);
         if (files == null) status.setText("App storage is unavailable. Check storage and restart SCDA.");
@@ -101,7 +68,23 @@ public class SetupActivity extends Activity {
         select.requestFocus();
     }
 
-    // Experimental setup opts in without changing release/Windows-builder import behavior.
+    private void showRequirements() {
+        String message = supportsLocalCompilation()
+            ? "Use your own supported original Xbox game, not PC or Xbox 360.\n\n"
+                + "Import ISO/XISO, ZIP, 7z, RAR or TAR, or an extracted folder with default.xbe, Default/ and Media/. "
+                + "Archives may contain one ISO or one game folder. Encrypted/split archives and CHD/CSO/CCI are unsupported.\n\n"
+                + "Allow about 3.5 GB for campaign files, plus the input copy, temporary extraction and at least 512 MiB for compilation. "
+                + "Compilation took 6–8 minutes on the tested phone, excluding import. Keep setup open; Back cancels.\n\n"
+                + "Matching prebuilt-library ZIPs also work. Saves and settings are not changed. Controller required."
+            : "Use a ZIP from the matching Windows builder. ZIP root: libscda_code.so and assets/. "
+                + "Inside assets/: default.xbe, Default/ and Media/.\n\n"
+                + "Allow space for the extracted game in addition to the ZIP. Keep setup open; Back cancels. "
+                + "Saves and settings are not changed. Controller required.";
+        new android.app.AlertDialog.Builder(this).setTitle("Requirements").setMessage(message)
+            .setPositiveButton("Close", null).show();
+    }
+
+    // Builds without installed compiler tools retain the Windows-builder ZIP path.
     protected boolean supportsLocalCompilation() { return false; }
     protected void showImportLicenses() {}
     protected void compileGame(File files, GameImport.Progress progress) throws IOException {}
@@ -112,7 +95,7 @@ public class SetupActivity extends Activity {
         }
     }
 
-    private String importLabel() { return supportsLocalCompilation() ? "Import game file (ISO / archive)" : "Import game ZIP"; }
+    private String importLabel() { return supportsLocalCompilation() ? "Import game file\nISO / XISO · ZIP · 7z · RAR · TAR" : "Import game ZIP"; }
     private void setSelectionEnabled(boolean enabled) {
         select.setEnabled(enabled);
         if (folder != null) folder.setEnabled(enabled);
@@ -174,7 +157,8 @@ public class SetupActivity extends Activity {
     protected void importZip(Uri uri) {
         setSelectionEnabled(false);
         progress.setVisibility(android.view.View.VISIBLE);
-        status.setText("Opening input…");
+        status.setText(uri == null ? "Resuming compilation…" : "Opening input…");
+        setup.phase(uri == null ? "02  COMPILE" : "01  IMPORT");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         worker = new Thread(() -> {
             String error = null;
@@ -188,13 +172,16 @@ public class SetupActivity extends Activity {
                     long now = android.os.SystemClock.elapsedRealtime();
                     if (bytes >= 0 && now - lastUpdate[0] < 250) return;
                     lastUpdate[0] = now;
-                    String text = bytes < 0 ? name : String.format(Locale.ROOT, "Extracted %.1f MiB\n%s", bytes / 1048576.0, name);
+                    String text = bytes < 0 ? name : String.format(Locale.ROOT, "Processed %.1f MiB\n%s", bytes / 1048576.0, name);
                     runOnUiThread(() -> {
                         if (!isDestroyed()) status.setText(text);
                     });
                 };
                 if (uri != null) importSource(uri, files, machine, update);
-                if (pendingBuild(files)) compileGame(files, update);
+                if (pendingBuild(files)) {
+                    runOnUiThread(() -> { if (!isDestroyed()) setup.phase("02  COMPILE"); });
+                    compileGame(files, update);
+                }
             } catch (IOException | RuntimeException e) {
                 error = e.getMessage() != null ? e.getMessage() : e.toString();
                 android.util.Log.e("SCDAImport", "Import failed", e);
@@ -207,8 +194,9 @@ public class SetupActivity extends Activity {
                 progress.setVisibility(android.view.View.GONE);
                 if (failure == null) launchGame();
                 else {
-                    status.setText("Setup stopped: " + failure + "\n\nYour saves and settings were not changed. Retry or resume below.");
+                    status.setText("Setup stopped: " + failure + "\n\nYour saves and settings were not changed. Retry or resume using the import button.");
                     boolean pending = pendingBuild(getExternalFilesDir(null));
+                    setup.phase(pending ? "02  COMPILE / RESUME" : "01  IMPORT / RETRY");
                     select.setText(pending ? "Compile / resume" : importLabel());
                     if (folder != null) folder.setVisibility(pending ? android.view.View.GONE : android.view.View.VISIBLE);
                     setSelectionEnabled(true);
