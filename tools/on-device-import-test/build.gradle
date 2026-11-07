@@ -1,0 +1,20 @@
+plugins { id 'com.android.application' version '9.4.1' }
+layout.buildDirectory = file('../../out/on-device-import/build')
+android {
+    namespace = 'io.github.mogeldev.scda'
+    compileSdk = 36
+    defaultConfig {
+        applicationId = 'io.github.mogeldev.scda.importtest'
+        minSdk = 30
+        targetSdk = 36
+        versionCode = 1
+        versionName = 'experimental-import-test'
+        ndk { abiFilters 'x86_64' }
+    }
+    sourceSets.main {
+        java.srcDirs = ['src/main/java', '../../out/on-device-import/java']
+        assets.srcDirs = ['../../out/on-device-import/assets']
+        jniLibs.srcDirs = ['../../out/on-device-import/jniLibs']
+    }
+    packaging.jniLibs { useLegacyPackaging = true; keepDebugSymbols += ['**/*.so'] }
+}

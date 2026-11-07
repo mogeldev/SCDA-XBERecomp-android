@@ -41,7 +41,16 @@ final class GameImport {
         extract(input, files, machine, false, progress);
     }
 
+    interface Extractor { void extract(Path stage) throws IOException; }
+
     static void extract(InputStream input, File files, int machine, boolean allowAssetsOnly, Progress progress) throws IOException {
+        extractWith(files, stage -> {
+            unpack(input, stage, progress);
+            validate(stage, machine, allowAssetsOnly, progress);
+        });
+    }
+
+    static void extractWith(File files, Extractor extractor) throws IOException {
         Files.createDirectories(files.toPath());
         // Also prevents a new setup Activity from deleting a previous worker's staging directory.
         try (FileChannel channel = FileChannel.open(new File(files, ".game-import.lock").toPath(),
@@ -59,22 +68,31 @@ final class GameImport {
                 Path stage = new File(files, ".game-import").toPath();
                 deleteTree(stage);
                 Files.createDirectory(stage);
+                Throwable failure = null;
                 try {
-                    unpack(input, stage, machine, allowAssetsOnly, progress);
+                    extractor.extract(stage);
+                    interrupted();
                     // One rename publishes both assets and code; an interrupted import is never considered installed.
                     try {
                         Files.move(stage, target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
                     } catch (java.nio.file.AtomicMoveNotSupportedException e) {
                         Files.move(stage, target.toPath());
                     }
+                } catch (IOException | RuntimeException | Error e) {
+                    failure = e;
+                    throw e;
                 } finally {
-                    deleteTree(stage);
+                    try { deleteTree(stage); }
+                    catch (IOException cleanup) {
+                        if (failure != null) failure.addSuppressed(cleanup);
+                        else throw cleanup;
+                    }
                 }
             }
         }
     }
 
-    private static void unpack(InputStream input, Path stage, int machine, boolean allowAssetsOnly, Progress progress) throws IOException {
+    private static void unpack(InputStream input, Path stage, Progress progress) throws IOException {
         Set<String> names = new HashSet<>();
         byte[] buffer = new byte[256 * 1024];
         long total = 0, spaceCheck = 0;
@@ -115,6 +133,10 @@ final class GameImport {
                 zip.closeEntry(); // Validates the entry CRC, including directories.
             }
         }
+    }
+
+    static void validate(Path stage, int machine, boolean allowAssetsOnly, Progress progress) throws IOException {
+        byte[] buffer = new byte[256 * 1024];
         File assets = stage.resolve("assets").toFile();
         if (!hasAssets(assets) || !hasFiles(stage.resolve("assets/Default")) || !hasFiles(stage.resolve("assets/Media")))
             throw new IOException("ZIP must contain assets/default.xbe, assets/Default/ and assets/Media/ with their files.");
@@ -137,7 +159,7 @@ final class GameImport {
                     throw new IOException("On-device compilation requires the supported unmodified USA default.xbe.");
             } catch (java.security.NoSuchAlgorithmException e) { throw new IOException(e); }
             interrupted();
-            progress.update("Assets imported; ready to compile", total);
+            progress.update("Assets imported; ready to compile", -1);
             return;
         }
         byte[] elf = header(stage.resolve("libscda_code.so"), 20);
@@ -147,7 +169,7 @@ final class GameImport {
                 || elf[4] != 2 || elf[5] != 1 || type != 3 || arch != machine)
             throw new IOException("libscda_code.so is not a matching 64-bit Android library. Use the matching player builder.");
         interrupted();
-        progress.update("Import complete", total);
+        progress.update("Import complete", -1);
     }
 
     private static void validateName(String name, boolean directory) throws IOException {
