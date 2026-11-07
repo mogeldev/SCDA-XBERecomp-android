@@ -53,10 +53,15 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn('state_focused', view)
         self.assertIn('setMinHeight(dp(48))', view)
         self.assertIn('ACCESSIBILITY_LIVE_REGION_POLITE', view)
+        self.assertIn('workProgress', view)
+        self.assertIn('percent.setText(value + "%")', view)
+        self.assertIn('showWorkPage', view)
         setup = (JAVA / 'SetupActivity.java').read_text(encoding='utf-8')
         self.assertIn('WindowInsets.Type.displayCutout()', setup)
         self.assertIn('this::showRequirements', setup)
         self.assertIn('worker.interrupt()', setup)
+        self.assertIn('updatePercent', (JAVA / 'GameImport.java').read_text(encoding='utf-8'))
+        self.assertIn('done * 100 / 129', (JAVA / 'OnDeviceSetupActivity.java').read_text(encoding='utf-8'))
 
     def test_setup_starts_in_fixed_landscape(self):
         for path, activity in [

@@ -35,7 +35,7 @@ public class SetupActivity extends Activity {
             launchGame();
             return;
         }
-        setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses);
+        setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses, this::cancelSetup);
         select = setup.select;
         folder = setup.folder;
         progress = setup.progress;
@@ -66,6 +66,17 @@ public class SetupActivity extends Activity {
         else if (state != null && state.getBoolean("importing"))
             status.setText("The previous import was interrupted. Select the input again to retry.");
         select.requestFocus();
+    }
+
+    private void cancelSetup() {
+        if (worker != null) {
+            worker.interrupt();
+            setup.workProgress("Cancelling… Verified compiler work will be retained.", -1);
+        } else if (pendingBuild(getExternalFilesDir(null))) importZip(null);
+        else {
+            setup.showImportPage();
+            setSelectionEnabled(true);
+        }
     }
 
     private void showRequirements() {
@@ -157,8 +168,9 @@ public class SetupActivity extends Activity {
     protected void importZip(Uri uri) {
         setSelectionEnabled(false);
         progress.setVisibility(android.view.View.VISIBLE);
-        status.setText(uri == null ? "Resuming compilation…" : "Opening input…");
-        setup.phase(uri == null ? "02  COMPILE" : "01  IMPORT");
+        boolean pending = pendingBuild(getExternalFilesDir(null));
+        setup.showWorkPage(pending || uri == null, uri == null ? "Preparing to resume…" : "Opening input…", true);
+        setup.phase(pending || uri == null ? "02  COMPILE" : "01  IMPORT");
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         worker = new Thread(() -> {
             String error = null;
@@ -168,18 +180,25 @@ public class SetupActivity extends Activity {
                 // The setup and native runtime execute in the same ABI/process.
                 int machine = android.os.Build.SUPPORTED_ABIS[0].equals("x86_64") ? 62 : 183;
                 long[] lastUpdate = {0};
-                GameImport.Progress update = (name, bytes) -> {
-                    long now = android.os.SystemClock.elapsedRealtime();
-                    if (bytes >= 0 && now - lastUpdate[0] < 250) return;
-                    lastUpdate[0] = now;
-                    String text = bytes < 0 ? name : String.format(Locale.ROOT, "Processed %.1f MiB\n%s", bytes / 1048576.0, name);
-                    runOnUiThread(() -> {
-                        if (!isDestroyed()) status.setText(text);
-                    });
+                GameImport.Progress update = new GameImport.Progress() {
+                    @Override public void update(String name, long bytes) { publish(name, bytes, -1); }
+                    @Override public void updatePercent(String name, int value) { publish(name, -1, value); }
+                    private void publish(String name, long bytes, int value) {
+                        long now = android.os.SystemClock.elapsedRealtime();
+                        if (bytes >= 0 && now - lastUpdate[0] < 250) return;
+                        lastUpdate[0] = now;
+                        String text = bytes < 0 ? name : String.format(Locale.ROOT, "Processed %.1f MiB · %s", bytes / 1048576.0, name);
+                        runOnUiThread(() -> { if (!isDestroyed()) setup.workProgress(text, value); });
+                    }
                 };
                 if (uri != null) importSource(uri, files, machine, update);
                 if (pendingBuild(files)) {
-                    runOnUiThread(() -> { if (!isDestroyed()) setup.phase("02  COMPILE"); });
+                    runOnUiThread(() -> {
+                        if (!isDestroyed()) {
+                            setup.phase("02  COMPILE");
+                            setup.showWorkPage(true, "Starting compilation…", true);
+                        }
+                    });
                     compileGame(files, update);
                 }
             } catch (IOException | RuntimeException e) {
@@ -194,13 +213,16 @@ public class SetupActivity extends Activity {
                 progress.setVisibility(android.view.View.GONE);
                 if (failure == null) launchGame();
                 else {
-                    status.setText("Setup stopped: " + failure + "\n\nYour saves and settings were not changed. Retry or resume using the import button.");
-                    boolean pending = pendingBuild(getExternalFilesDir(null));
-                    setup.phase(pending ? "02  COMPILE / RESUME" : "01  IMPORT / RETRY");
-                    select.setText(pending ? "Compile / resume" : importLabel());
-                    if (folder != null) folder.setVisibility(pending ? android.view.View.GONE : android.view.View.VISIBLE);
+                    boolean failedBuild = pendingBuild(getExternalFilesDir(null));
+                    setup.showWorkPage(failedBuild, "Setup stopped: " + failure
+                        + "\n\nYour saves and settings were not changed. "
+                        + (pending ? "Verified objects are retained. Resume when ready." : "Choose another file to retry."), false);
                     setSelectionEnabled(true);
-                    select.requestFocus();
+                    if (failedBuild) setup.cancel.setOnClickListener(view -> importZip(null));
+                    else setup.cancel.setOnClickListener(view -> {
+                        setup.showImportPage();
+                        setSelectionEnabled(true);
+                    });
                 }
             });
         }, "SCDA game import");
@@ -219,10 +241,9 @@ public class SetupActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        if (worker != null) {
-            worker.interrupt();
-            status.setText("Cancelling setup… Completed compiler work will be kept.");
-        } else super.onBackPressed();
+        if (worker != null) cancelSetup();
+        else if (setup != null && setup.isWorkPageVisible()) cancelSetup();
+        else super.onBackPressed();
     }
 
     @Override protected void onDestroy() {

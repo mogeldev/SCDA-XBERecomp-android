@@ -4,11 +4,27 @@ package io.github.mogeldev.scda;
 public final class SetupPreviewActivity extends android.app.Activity {
     @Override public void onCreate(android.os.Bundle state) {
         super.onCreate(state);
+        final SetupView[] screen = new SetupView[1];
         SetupView view = new SetupView(this, !getIntent().getBooleanExtra("prebuilt", false),
             () -> new android.app.AlertDialog.Builder(this).setTitle("Requirements")
                 .setMessage("UI preview only. No game files are read.").setPositiveButton("Close", null).show(),
             () -> new android.app.AlertDialog.Builder(this).setTitle("Tools & licenses")
-                .setMessage("UI preview only. The app displays its packaged notices here.").setPositiveButton("Close", null).show());
+                .setMessage("UI preview only. The app displays its packaged notices here.").setPositiveButton("Close", null).show(),
+            () -> {
+                SetupView current = screen[0];
+                current.showWorkPage(true, "Cancelled. 54 verified objects retained.", false);
+                current.cancel.setOnClickListener(v -> {
+                    current.phase("02  COMPILE / RESUME");
+                    current.status.setText("Preview: compiling 54 / 129 sources");
+                    current.progress.setVisibility(android.view.View.VISIBLE);
+                    current.progress.setIndeterminate(false);
+                    current.progress.setProgress(42);
+                    current.percent.setText("42%");
+                    current.percent.setVisibility(android.view.View.VISIBLE);
+                    current.cancel.setText("Back / cancel");
+                });
+            });
+        screen[0] = view;
         getWindow().setDecorFitsSystemWindows(false);
         view.setOnApplyWindowInsetsListener((v, insets) -> {
             android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
