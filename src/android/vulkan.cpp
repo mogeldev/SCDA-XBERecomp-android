@@ -4,6 +4,7 @@
 // barrier: fewer layout transitions to get wrong, for a 640x480 title's few targets.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <sys/system_properties.h>
 #include <vulkan/vulkan.h>
 
 #include <dxgiformat.h>
@@ -12,6 +13,7 @@
 #include <SPIRV/GlslangToSpv.h>
 
 #include <algorithm>
+#include <cassert>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -34,6 +36,7 @@
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
 #include "kernel/kernel.h"
+#include "android/descriptor_sets.h"
 #include "android/frame_fences.h"
 #include "android/image_memory.h"
 #include "android/vertex_hlsl.h"
@@ -49,6 +52,23 @@ constexpr VkDeviceSize kRingReserve = 8ull << 20;
 constexpr uint32_t kSetsPerPool = 2048;
 constexpr VkFormat kBgra = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr uint32_t kNone = UINT32_MAX;
+constexpr uint32_t kTimedPasses = 128;
+constexpr uint32_t kTimestampQueries = 2 + kTimedPasses * 2;
+
+bool DebugFlag(const char* name, bool fallback = false) {
+    char value[PROP_VALUE_MAX] = {};
+    return __system_property_get(name, value) ? std::strcmp(value, "1") == 0 : fallback;
+}
+
+struct CpuTimer {
+    using Clock = std::chrono::steady_clock;
+    double* ms;
+    Clock::time_point start;
+    explicit CpuTimer(double* out) : ms(out), start(out ? Clock::now() : Clock::time_point{}) {}
+    ~CpuTimer() {
+        if (ms) *ms += std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    }
+};
 
 void CheckGpu(bool ok) {
     if (ok) return;
@@ -682,6 +702,15 @@ private:
         VkDeviceSize used = 0;
         std::vector<VkDescriptorPool> pools;
         size_t set_pool = 0;  // the pool sets come from now
+        DescriptorSets sets;
+        VkQueryPool timestamps = VK_NULL_HANDLE;
+        bool timestamps_pending = false;
+        struct TimedPass {
+            uint64_t key = 0;
+            uint32_t draws = 0;
+        };
+        std::array<TimedPass, kTimedPasses> timed_passes{};
+        uint32_t timed_count = 0;
         std::vector<Image> dead_images;
         std::vector<Buffer> dead_buffers;
     };
@@ -729,7 +758,7 @@ private:
     VkRenderPass Pass(VkFormat color, bool depth, bool clear, VkImageLayout layout);
     VkFramebuffer Framebuffer(VkRenderPass rp, VkImageView color, VkImageView depth, uint32_t w, uint32_t h);
     void ForgetView(VkImageView v);
-    void BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h);
+    void BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h, uint64_t timing_key);
     void EndRendering();
     void GlobalBarrier();
     void SetViewport(float x, float y, float w, float h);
@@ -766,6 +795,7 @@ private:
     void PresentBlit(const Target& t, bool pillarbox);
     bool AcquireImage(uint32_t& index);
     void CountFps();
+    void LogStats();
     void ApplySettings();
 
     SDL_Window* window_ = nullptr;
@@ -852,6 +882,21 @@ private:
     float scale_ = 1;
     uint32_t shadow_res_ = 0;
     Assembled asm_;
+    bool profile_ = false;
+    bool descriptor_cache_ = true;
+    bool timing_pass_ = false;
+    struct PassStats {
+        double ms = 0;
+        uint64_t count = 0, draws = 0;
+    };
+    std::unordered_map<uint64_t, PassStats> pass_stats_;
+    uint32_t timestamp_bits_ = 0;
+    struct Stats {
+        uint64_t frames = 0, draws = 0, sets = 0, hits = 0, upload_bytes = 0, passes = 0, flushes = 0, syncs = 0;
+        uint64_t shaders = 0, pipelines = 0, gpu_samples = 0;
+        double draw_ms = 0, descriptor_ms = 0, wait_ms = 0, acquire_ms = 0, present_ms = 0;
+        double shader_ms = 0, pipeline_ms = 0, gpu_ms = 0;
+    } stats_;
     std::chrono::steady_clock::time_point fps_t_ = std::chrono::steady_clock::now();
     uint64_t fps_n_ = 0;
 };
@@ -869,13 +914,20 @@ VulkanBackend* g_vk = nullptr;
 
 VulkanBackend::~VulkanBackend() {
     g_vk = nullptr;
-    if (dev_) vkDeviceWaitIdle(dev_);
+    if (dev_) {
+        vkDeviceWaitIdle(dev_);
+        for (Frame& f : frames_)
+            if (f.timestamps) vkDestroyQueryPool(dev_, f.timestamps, nullptr);
+    }
 }
 
 bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     guest_w_ = width;
     guest_h_ = height;
     window_ = static_cast<SDL_Window*>(app::Window());
+    profile_ = DebugFlag("debug.scda.vk_profile");
+    descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
+    LOGI("vulkan: profiling %s, descriptor cache %s", profile_ ? "on" : "off", descriptor_cache_ ? "on" : "off");
     glslang::InitializeProcess();
     if (!CreateInstance() || !CreateSurface() || !CreateDevice()) return false;
     if (!CreateSwapchain()) LOGW("vulkan: no swapchain yet, presents wait for the window");
@@ -933,6 +985,7 @@ bool VulkanBackend::CreateDevice() {
             if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) {
                 gpu_ = gpu;
                 family_ = i;
+                timestamp_bits_ = families[i].timestampValidBits;
             }
         }
         if (gpu_) break;
@@ -1146,6 +1199,12 @@ bool VulkanBackend::CreateFrames() {
         VK_TRY(vkAllocateCommandBuffers(dev_, &ai, cbs));
         f.up = cbs[0];
         f.cmd = cbs[1];
+        if (profile_ && timestamp_bits_) {
+            VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            qi.queryCount = kTimestampQueries;
+            VK_TRY(vkCreateQueryPool(dev_, &qi, nullptr, &f.timestamps));
+        }
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VK_TRY(vkCreateSemaphore(dev_, &si, nullptr, &f.acquired));
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
@@ -1375,6 +1434,7 @@ void VulkanBackend::CreateDummies() {
 }
 
 VulkanBackend::Alloc VulkanBackend::Upload(VkDeviceSize size, VkDeviceSize align) {
+    if (profile_) stats_.upload_bytes += size;
     Frame& f = Cur();
     VkDeviceSize o = (f.used + align - 1) / align * align;
     if (o + size <= kRingSize) {
@@ -1397,7 +1457,32 @@ VulkanBackend::Alloc VulkanBackend::Upload(VkDeviceSize size, VkDeviceSize align
 
 void VulkanBackend::BeginFrame() {
     Frame& f = Cur();
-    CheckGpu(fences_.Begin(frame_ % kFrames));
+    {
+        CpuTimer timer(profile_ ? &stats_.wait_ms : nullptr);
+        CheckGpu(fences_.Begin(frame_ % kFrames));
+    }
+    if (f.timestamps_pending) {
+        std::array<uint64_t, kTimestampQueries> ticks{};
+        uint32_t count = 2 + f.timed_count * 2;
+        if (vkGetQueryPoolResults(dev_, f.timestamps, 0, count, count * sizeof(uint64_t), ticks.data(), sizeof(uint64_t),
+                                  VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+            uint64_t mask = UINT64_MAX >> (64 - timestamp_bits_);
+            auto elapsed = [&](uint32_t begin, uint32_t end) {
+                return double((ticks[end] - ticks[begin]) & mask) * props_.limits.timestampPeriod / 1e6;
+            };
+            stats_.gpu_ms += elapsed(0, 1);
+            stats_.gpu_samples++;
+            for (uint32_t i = 0; i < f.timed_count; i++) {
+                const auto& pass = f.timed_passes[i];
+                auto& total = pass_stats_[pass.key];
+                total.ms += elapsed(2 + i * 2, 3 + i * 2);
+                total.count++;
+                total.draws += pass.draws;
+            }
+        }
+        f.timestamps_pending = false;
+    }
+    f.sets.clear();
     for (Image& im : f.dead_images) DestroyImage(im);
     for (Buffer& b : f.dead_buffers) DestroyBuffer(b);
     f.dead_images.clear();
@@ -1410,6 +1495,12 @@ void VulkanBackend::BeginFrame() {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(f.up, &bi);
     vkBeginCommandBuffer(f.cmd, &bi);
+    if (f.timestamps) {
+        vkCmdResetQueryPool(f.up, f.timestamps, 0, kTimestampQueries);
+        vkCmdWriteTimestamp(f.up, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, f.timestamps, 0);
+    }
+    f.timed_count = 0;
+    timing_pass_ = false;
     active_ = other_ = false;
     active_rt_ = active_ds_ = nullptr;
 }
@@ -1417,6 +1508,10 @@ void VulkanBackend::BeginFrame() {
 void VulkanBackend::Submit(VkSemaphore wait, VkSemaphore signal) {
     Frame& f = Cur();
     EndRendering();
+    if (f.timestamps) {
+        vkCmdWriteTimestamp(f.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, f.timestamps, 1);
+        f.timestamps_pending = true;
+    }
     vkEndCommandBuffer(f.up);
     vkEndCommandBuffer(f.cmd);
     VkCommandBuffer cbs[2] = {f.up, f.cmd};
@@ -1433,6 +1528,7 @@ void VulkanBackend::Submit(VkSemaphore wait, VkSemaphore signal) {
 }
 
 void VulkanBackend::Flush() {
+    if (profile_) stats_.flushes++;
     Submit(VK_NULL_HANDLE, VK_NULL_HANDLE);
     BeginFrame();
 }
@@ -1515,7 +1611,16 @@ void VulkanBackend::ForgetView(VkImageView v) {
     }
 }
 
-void VulkanBackend::BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h) {
+void VulkanBackend::BeginPass(VkRenderPass rp, VkFramebuffer fb, uint32_t w, uint32_t h, uint64_t timing_key) {
+    if (profile_) stats_.passes++;
+    Frame& f = Cur();
+    assert(!active_ && !timing_pass_ && f.timed_count <= kTimedPasses);
+    timing_pass_ = f.timestamps && f.timed_count < kTimedPasses;
+    if (timing_pass_) {
+        f.timed_passes[f.timed_count] = {timing_key, 0};
+        // Bottom-of-pipe boundaries give serialized intervals, including attachment load/store and pass barriers.
+        vkCmdWriteTimestamp(f.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, f.timestamps, 2 + f.timed_count * 2);
+    }
     VkClearValue clear{};
     clear.color = {{0, 0, 0, 1}};
     VkRenderPassBeginInfo bi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -1532,7 +1637,8 @@ void VulkanBackend::BeginRendering(Target* rt, Target* ds) {
     EndRendering();
     uint32_t w = rt ? rt->w : ds->w, h = rt ? rt->h : ds->h;
     VkRenderPass rp = Pass(rt ? kBgra : VK_FORMAT_UNDEFINED, ds != nullptr, false, VK_IMAGE_LAYOUT_GENERAL);
-    BeginPass(rp, Framebuffer(rp, rt ? rt->im.view : VK_NULL_HANDLE, ds ? ds->im.attach : VK_NULL_HANDLE, w, h), w, h);
+    uint64_t key = uint64_t(rt ? rt->data : ds->data) | uint64_t(w) << 32 | uint64_t(h) << 48;
+    BeginPass(rp, Framebuffer(rp, rt ? rt->im.view : VK_NULL_HANDLE, ds ? ds->im.attach : VK_NULL_HANDLE, w, h), w, h, key);
     active_ = true;
     other_ = false;
     active_rt_ = rt;
@@ -1545,7 +1651,7 @@ void VulkanBackend::BeginRenderingView(VkImageView view, VkFormat fmt, VkImageLa
                                        bool clear) {
     EndRendering();
     VkRenderPass rp = Pass(fmt, false, clear, layout);
-    BeginPass(rp, Framebuffer(rp, view, VK_NULL_HANDLE, w, h), w, h);
+    BeginPass(rp, Framebuffer(rp, view, VK_NULL_HANDLE, w, h), w, h, uint64_t(w) << 32 | uint64_t(h) << 48);
     active_ = true;
     other_ = true;
     active_rt_ = active_ds_ = nullptr;
@@ -1555,6 +1661,13 @@ void VulkanBackend::EndRendering() {
     if (!active_) return;
     vkCmdEndRenderPass(Cur().cmd);
     GlobalBarrier();
+    if (timing_pass_) {
+        Frame& f = Cur();
+        assert(f.timed_count < kTimedPasses);
+        vkCmdWriteTimestamp(f.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, f.timestamps, 3 + f.timed_count * 2);
+        f.timed_count++;
+        timing_pass_ = false;
+    }
     active_ = other_ = false;
     active_rt_ = active_ds_ = nullptr;
 }
@@ -1937,6 +2050,8 @@ VkShaderModule VulkanBackend::Module(const std::string& hlsl, EShLanguage stage,
         f.read(reinterpret_cast<char*>(spv.data()), std::streamsize(spv.size() * 4));
     }
     if (spv.empty()) {
+        CpuTimer timer(profile_ ? &stats_.shader_ms : nullptr);
+        if (profile_) stats_.shaders++;
         glslang::TShader sh(stage);
         const char* src = text.c_str();
         sh.setStrings(&src, 1);
@@ -2135,6 +2250,8 @@ VkPipeline VulkanBackend::EnsurePipeline(const PipeKey& k, VkShaderModule vs, Vk
     ci.pDynamicState = &ds;
     ci.layout = layout_;
     VkPipeline p = VK_NULL_HANDLE;
+    CpuTimer timer(profile_ ? &stats_.pipeline_ms : nullptr);
+    if (profile_) stats_.pipelines++;
     if (vkCreateGraphicsPipelines(dev_, cache_, 1, &ci, nullptr, &p) != VK_SUCCESS) {
         LOG_FIRST(8, "vulkan: pipeline creation failed");
     }
@@ -2198,6 +2315,8 @@ VkPipeline VulkanBackend::EnsureBlitPipeline(VkFormat fmt, bool over) {
     ci.pDynamicState = &ds;
     ci.layout = layout_;
     VkPipeline p = VK_NULL_HANDLE;
+    CpuTimer timer(profile_ ? &stats_.pipeline_ms : nullptr);
+    if (profile_) stats_.pipelines++;
     if (vkCreateGraphicsPipelines(dev_, cache_, 1, &ci, nullptr, &p) != VK_SUCCESS) {
         LOGE("vulkan: blit pipeline failed");
     }
@@ -2231,8 +2350,27 @@ VkDescriptorSet VulkanBackend::AllocSet() {
 
 void VulkanBackend::BindSet(const Alloc& vc, VkDeviceSize vc_size, const Alloc& dc, VkDeviceSize dc_size,
                             const StageView views[4], const VkSampler samplers[4]) {
+    CpuTimer timer(profile_ ? &stats_.descriptor_ms : nullptr);
+    DescriptorKey key;
+    key.buffers = {vc.buf, dc.buf};
+    key.ranges = {vc_size, dc_size};
+    for (size_t i = 0; i < 4; i++) {
+        key.views[i] = views[i].view;
+        key.layouts[i] = views[i].layout;
+        key.samplers[i] = samplers[i];
+    }
+    uint32_t offsets[2] = {uint32_t(vc.off), uint32_t(dc.off)};
+    if (descriptor_cache_) {
+        auto it = Cur().sets.find(key);
+        if (it != Cur().sets.end()) {
+            if (profile_) stats_.hits++;
+            vkCmdBindDescriptorSets(Cur().cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &it->second, 2, offsets);
+            return;
+        }
+    }
     VkDescriptorSet set = AllocSet();
     if (!set) return;
+    if (profile_) stats_.sets++;
     VkDescriptorBufferInfo bi[2] = {{vc.buf, 0, vc_size}, {dc.buf, 0, dc_size}};
     VkDescriptorImageInfo ii[4], si[4];
     VkWriteDescriptorSet w[10];
@@ -2255,7 +2393,7 @@ void VulkanBackend::BindSet(const Alloc& vc, VkDeviceSize vc_size, const Alloc& 
         }
     }
     vkUpdateDescriptorSets(dev_, 10, w, 0, nullptr);
-    uint32_t offsets[2] = {uint32_t(vc.off), uint32_t(dc.off)};
+    if (descriptor_cache_) Cur().sets.emplace(key, set);
     vkCmdBindDescriptorSets(Cur().cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &set, 2, offsets);
 }
 
@@ -2278,11 +2416,14 @@ void VulkanBackend::Blit(const BlitArgs& b) {
     VkSampler smp[4] = {linear_, point_, point_, point_};
     BindSet(cb, sizeof(c), cb, sizeof(c), views, smp);
     vkCmdDraw(cmd, 4, 1, 0, 0);
+    if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
 }
 
 // ---- the title's calls
 
 void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
+    CpuTimer timer(profile_ ? &stats_.draw_ms : nullptr);
+    if (profile_) stats_.draws++;
     Assembled& a = asm_;
     if (!Assemble(s, prim, start, count, indices, a)) return;
     // a level's first frame draws everything once: past the ring every upload would be a buffer of its own
@@ -2387,6 +2528,7 @@ void VulkanBackend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t
         bufs[i] = vb.buf;
         offs[i] = vb.off;
     }
+    if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
     if (a.buffer_count) vkCmdBindVertexBuffers(cmd, 0, a.buffer_count, bufs, offs);
     if (a.index_count) {
         uint32_t ibytes = a.index_count * (a.index16 ? 2 : 4);
@@ -2512,6 +2654,7 @@ void VulkanBackend::Copy(const Surface& src, const Surface& dst, uint32_t count,
 void VulkanBackend::Sync(uint32_t data, uint32_t) {
     auto it = targets_.find(TargetKey(data, false));
     if (it == targets_.end() || !it->second.drawn) return;
+    if (profile_) stats_.syncs++;
     Target& t = it->second;
     Image down;
     VkImage src = GuestSizedSource(t, down);
@@ -2700,6 +2843,7 @@ void VulkanBackend::PresentBlit(const Target& t, bool pillarbox) {
 
 // false without an image this frame: the window is gone or the swapchain is being made again
 bool VulkanBackend::AcquireImage(uint32_t& index) {
+    CpuTimer timer(profile_ ? &stats_.acquire_ms : nullptr);
     if (recreate_ || !swapchain_) {
         if (swapchain_) DestroySwapchain();
         if (surface_ && !CreateSwapchain()) {
@@ -2728,6 +2872,34 @@ void VulkanBackend::CountFps() {
         fps_n_ = 0;
         fps_t_ = now;
     }
+}
+
+void VulkanBackend::LogStats() {
+    if (++stats_.frames < 120) return;
+    const auto& s = stats_;
+    double n = double(s.frames);
+    LOGI("vk-perf: cache=%s frames=%llu draw=%.2fms descriptors=%.2fms wait=%.2fms acquire=%.2fms present=%.2fms "
+         "gpu=%.2fms/%llu submits draws=%.1f sets=%.1f hits=%.1f writes=%.1f upload=%.2fMiB passes=%.1f "
+         "flush=%llu sync=%llu compile=%llu/%.2fms pipelines=%llu/%.2fms",
+         descriptor_cache_ ? "on" : "off", (unsigned long long)s.frames, s.draw_ms / n, s.descriptor_ms / n,
+         s.wait_ms / n, s.acquire_ms / n, s.present_ms / n, s.gpu_samples ? s.gpu_ms / s.gpu_samples : 0,
+         (unsigned long long)s.gpu_samples, s.draws / n, s.sets / n, s.hits / n, 10.0 * s.sets / n,
+         s.upload_bytes / n / (1024 * 1024), s.passes / n, (unsigned long long)s.flushes, (unsigned long long)s.syncs,
+         (unsigned long long)s.shaders, s.shader_ms, (unsigned long long)s.pipelines, s.pipeline_ms);
+    std::vector<std::pair<uint64_t, PassStats>> top(pass_stats_.begin(), pass_stats_.end());
+    std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
+    LOGI("vk-passes: sampled=%zu gpu-submissions=%llu (first %u passes per submission)",
+         top.size(), (unsigned long long)s.gpu_samples, kTimedPasses);
+    for (size_t i = 0; i < std::min<size_t>(top.size(), 8); i++) {
+        const auto& [key, p] = top[i];
+        double samples = double(std::max<uint64_t>(s.gpu_samples, 1));
+        LOGI("vk-pass: target=%08X size=%ux%u ms/submit=%.3f passes/submit=%.2f draws/pass=%.1f",
+             uint32_t(key), uint32_t((key >> 32) & 0xFFFF), uint32_t(key >> 48), p.ms / samples,
+             p.count / samples, double(p.draws) / p.count);
+    }
+    pass_stats_.clear();
+    stats_ = {};
+    descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
 }
 
 // Called between frames, after the old frame was submitted. Retire its images with the new frame, not while the
@@ -2790,6 +2962,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
         pi.swapchainCount = 1;
         pi.pSwapchains = &swapchain_;
         pi.pImageIndices = &img;
+        CpuTimer timer(profile_ ? &stats_.present_ms : nullptr);
         VkResult r = vkQueuePresentKHR(queue_, &pi);
         if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_ERROR_SURFACE_LOST_KHR || r == VK_SUBOPTIMAL_KHR) recreate_ = true;
     }
@@ -2800,6 +2973,7 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
     ReleaseOldTextures();
     ApplySettings();
     CountFps();
+    if (profile_) LogStats();
     // Android ends the app without notice: the pipelines go to disk now and then
     constexpr uint64_t kSaveEvery = 600;
     if (presents_ % kSaveEvery == 0) SavePipelines();

@@ -31,7 +31,7 @@ The [emulator harness](../../tools/on-device-import-test/README.md) uses these e
 
 ## Vulkan renderer tests
 
-No GPU or game assets needed. Tests cover 5,000 images sharing one allocation, alignment/non-overlap, hole coalescing, memory-type isolation, dedicated/large allocations and OOM fallback; present/flush fence ordering, concurrent wait/reset and failure handling; and real glslang compilation with SPIR-V `PointSize` stores for fixed/programmed vertex shaders.
+No GPU or game assets needed. Tests cover descriptor-set key equality/misses for every binding field, per-frame isolation and reset; 5,000 images sharing one allocation, alignment/non-overlap, hole coalescing, memory-type isolation, dedicated/large allocations and OOM fallback; present/flush fence ordering, concurrent wait/reset and failure handling; and real glslang compilation with SPIR-V `PointSize` stores for fixed/programmed vertex shaders.
 
 On Windows, use an **x64 Visual Studio developer command prompt** with CMake/Ninja on PATH. Set `NDK` to your Android NDK directory (the NDK Clang supports the shader generator's `__int128`, unlike MSVC):
 

@@ -1,4 +1,5 @@
 // Vulkan bookkeeping mocks plus real glslang compilation; no GPU or game assets required.
+#include "android/descriptor_sets.h"
 #include "android/frame_fences.h"
 #include "android/image_memory.h"
 #include "android/vertex_hlsl.h"
@@ -42,6 +43,44 @@ VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(VkDevice, uint32_t n, const VkFen
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(VkDevice, uint32_t n, const VkFence* f) {
     assert(n == 1 && pending.at(*f)); pending[*f] = false; return VK_SUCCESS;
+}
+
+static void DescriptorTest() {
+    gpu::DescriptorKey key;
+    key.buffers = {reinterpret_cast<VkBuffer>(1), reinterpret_cast<VkBuffer>(2)};
+    key.ranges = {4096, 1024};
+    key.views.fill(reinterpret_cast<VkImageView>(3));
+    key.layouts.fill(VK_IMAGE_LAYOUT_GENERAL);
+    key.samplers.fill(reinterpret_cast<VkSampler>(4));
+    gpu::DescriptorSets sets;
+    auto set = reinterpret_cast<VkDescriptorSet>(5);
+    sets.emplace(key, set);
+    auto same = key;
+    assert(sets.at(same) == set); // new dynamic offsets must reuse this set
+    assert(gpu::DescriptorHash{}(same) == gpu::DescriptorHash{}(key));
+    for (size_t i = 0; i < 2; ++i) {
+        auto changed = key;
+        changed.buffers[i] = reinterpret_cast<VkBuffer>(10);
+        assert(!sets.contains(changed));
+        changed = key; changed.ranges[i]++;
+        assert(!sets.contains(changed));
+    }
+    for (size_t i = 0; i < 4; ++i) {
+        auto changed = key;
+        changed.views[i] = reinterpret_cast<VkImageView>(10);
+        assert(!sets.contains(changed));
+        changed = key; changed.layouts[i] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        assert(!sets.contains(changed));
+        changed = key; changed.samplers[i] = reinterpret_cast<VkSampler>(10);
+        assert(!sets.contains(changed));
+    }
+    gpu::DescriptorSets other_frame;
+    assert(!other_frame.contains(key));
+    sets.clear(); // fence completed, pool will reset: never reuse its old handles
+    assert(!sets.contains(key));
+    auto new_set = reinterpret_cast<VkDescriptorSet>(6);
+    sets.emplace(key, new_set);
+    assert(sets.at(key) == new_set);
 }
 
 static void MemoryTest() {
@@ -193,6 +232,6 @@ static void ShaderTest() {
 }
 
 int main() {
-    MemoryTest(); FenceTest(); ShaderTest();
-    std::puts("PASS: image pooling/alignment/reuse/dedicated/OOM, frame fences/reuse/thread race/errors, SPIR-V PointSize stores");
+    DescriptorTest(); MemoryTest(); FenceTest(); ShaderTest();
+    std::puts("PASS: descriptor keys/reuse/frame reset, image pooling/alignment/reuse/dedicated/OOM, frame fences/reuse/thread race/errors, SPIR-V PointSize stores");
 }
