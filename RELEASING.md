@@ -64,4 +64,8 @@ The phone workflow—install, select an ISO, on-device compilation, automatic la
 
 Android `0.1.0-testing.3` / code 5, same debug certificate. First release with the versioned Windows builder (`SCDA-Android-0.1.0-testing.3-Windows-Builder.zip`), the launcher screen and the on-request GitHub update check. Assets: APK, builder, corresponding source (toolchain libraries unchanged from testing.2) and SHA-256 sums. Phone upgrade in place, launcher, update check and game start were confirmed on the Adreno 710 phone; the full builder smoke test passed. Same open items as testing.2.
 
+## Published testing version: 0.1.0-testing.4
+
+Android `0.1.0-testing.4` / code 6, same debug certificate. Adds on-screen touch controls (shown while no controller is connected; CONTROLLER page: TOUCH CONTROLS AUTOMATIC/ON/OFF and opacity) and the app icon. Assets: APK, builder, corresponding source (toolchain libraries unchanged from testing.3) and SHA-256 sums. Touch controls and the icon were confirmed on the Adreno 710 phone; the full builder smoke test passed. Same open items as testing.2.
+
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.
