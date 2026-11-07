@@ -97,6 +97,24 @@ Validation fixes and rerun:
 - Installed the matching-certificate ARM64 APK in place, then repeated core + synchronization validation with Khronos 1.4.363.1: startup/loading and Iceland gameplay with original barriers, then a separate launch with narrow barriers. Both have **zero Validation Error messages and zero SYNC-HAZARD messages**, with Synchronization explicitly confirmed enabled. The two earlier VUIDs did not recur. This establishes clean validation only for the exercised paths, not all game scenes/devices. Logs/screenshots/summary: ignored `out/vulkan-perf/validation/fixes-*`.
 - Restored all original global debug settings and layer properties, removed temporary validation libraries from phone, restored original barriers/profiling off/tracing off and relaunched normally. Saves/settings/imported game code and caches untouched.
 
+Stutter and compile-hitch measurement (Adreno 710, profiling on, opt-in `debug.scda.vk_cold_cache` exists but was not used):
+- Run 1 after the SPIR-V source change (partly stale cache, ~200 s): 60 shader compiles/1.86 s, 334 pipelines/1.96 s; every gameplay hitch of 200-741 ms had compiles. Run 2, same route with warm cache (~155 s): 1 shader/278 ms (new video/menu content), 303 pipelines/0.37 s; ~1.8 s lost in compile frames versus ~5.0 s.
+- Remaining large hitches are load/save/autosave and video transitions (title waits up to 326 ms for a flush and 516 ms for a read-back), not compilation. ~350 frames at 25-33 ms are 120 Hz pacing with a GPU near 12-18 ms per frame.
+- Decision: an RPCS3-style asynchronous interpreter/fallback (estimated 4-7 weeks) is not worthwhile for repeat play. Possible later: record/warm pipeline recipes for first launch after shader-source changes.
+
+Scaled presentation (default on, `debug.scda.vk_present_scaled=0` disables; read at startup, and live at profiling report boundaries):
+- Swapchain uses the window aspect at `render_percent` (50%: 610x1356 instead of 1220x2712). SurfaceFlinger reports `Device` composition, so the display hardware stretches it without a GPU composition pass. Recreated when the render scale changes.
+- Stationary Iceland, 50%, live off/on/off/on: GPU 16.18/14.84/16.31/14.82 ms, FPS 56.76/61.37/56.77/61.58; draws unchanged (~561). Screenshot differences on/off match off/off noise (moving sun glow only); zoomed scene and HUD crops equivalent because the game renders into its 813x610 target anyway.
+- Perfetto GPU counters, same comparison: write bandwidth 551 -> 460 MB/s median, fragments 744 -> 618 M/s; clocks unchanged at ~940 MHz.
+- Not verified: rotation/resume and menus with the option on; at 100% render scale the swapchain is unchanged.
+
+GPU counter profile (Android GPU Inspector 3.3.3 counter list, Perfetto `gpu.counters`, stationary Iceland 50%):
+- GPU at ~940 MHz; shaders busy 87%; 90-93% of time shading fragments; texture fetch stall ~39-45%; texture L1 miss ~40-45%; texture pipes busy ~70%; ALU capacity used only ~33%. Bus busy ~5% and system-memory stall ~0.1%.
+- So the scene is fragment/texture-fetch limited, not memory-bandwidth or ALU limited. This weakens the earlier hypothesis that repeated tile load/store per pass dominates. `gpu.renderstages` produced no slices on this driver without the AGI layer.
+- Texture statistics (`vk-textures`, profiling only), same scene: ~1,190 binds/frame = ~655 BC (stay compressed; `BC textures yes`), ~437 uncompressed, ~99 render targets. ~445 with mips, ~647 without (average ~48k texels), ~52 without mips at >=256x256 (as the game supplies them). No BC mip chains dropped for non-multiple-of-4 sizes; no anisotropic samplers.
+- All ~437 uncompressed binds are console A8R8G8B8 (32-bit), average ~2,660 texels (~52x52). Native 16/8-bit host formats would gain nothing here; not implemented. Mip generation or runtime compression would change the image and were not pursued.
+- Maybe later: C) do not store depth after its final use in a frame; D) merge/reorder passes. Neither started; C requires proving no later depth read; D can change output.
+
 Remaining limitations:
 - Colour-blind modes and the ImGui overlay are left out.
 - Point-sprite texture coordinates and fixed-function distance attenuation are not implemented by this point-size fix.

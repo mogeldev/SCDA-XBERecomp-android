@@ -889,6 +889,8 @@ private:
     bool profile_ = false;
     bool profile_passes_ = true;
     bool narrow_barriers_ = false;
+    // Default on: swapchain at the render scale; the display hardware stretches it (debug.scda.vk_present_scaled=0 off).
+    bool present_scaled_ = false;
     bool descriptor_cache_ = true;
     bool skip_unused_stages_ = true;
     bool timing_pass_ = false;
@@ -905,12 +907,21 @@ private:
         uint64_t shaders = 0, pipelines = 0, gpu_samples = 0;
         std::array<uint64_t, size_t(PassEnd::Count)> pass_ends{};
         uint64_t clears = 0, full_clear_starts = 0, unused_stages = 0;
+        // texture binds by kind; nomip_big = no mip chain and at least 256x256 (minified it skips texels)
+        uint64_t tex_bc = 0, tex_raw = 0, tex_mip = 0, tex_nomip = 0, tex_nomip_big = 0, tex_rt = 0, tex_aniso = 0;
+        uint64_t tex_bc_padded = 0, tex_texels = 0;
         uint64_t clear_color_pixels = 0, clear_depth_pixels = 0, clear_stencil_pixels = 0;
         double draw_ms = 0, descriptor_ms = 0, wait_ms = 0, acquire_ms = 0, present_ms = 0;
         double shader_ms = 0, pipeline_ms = 0, gpu_ms = 0;
     } stats_;
     std::chrono::steady_clock::time_point fps_t_ = std::chrono::steady_clock::now();
     uint64_t fps_n_ = 0;
+    // Per-present hitch attribution while profiling; cold mode ignores and never writes disk caches.
+    bool cold_cache_ = false;
+    std::chrono::steady_clock::time_point frame_t_{};
+    uint64_t frame_shaders_ = 0, frame_pipelines_ = 0;
+    double frame_shader_ms_ = 0, frame_pipeline_ms_ = 0;
+    void LogFrame();
 };
 
 VulkanBackend* g_vk = nullptr;
@@ -940,9 +951,12 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     profile_ = DebugFlag("debug.scda.vk_profile");
     profile_passes_ = DebugFlag("debug.scda.vk_profile_passes", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
+    present_scaled_ = DebugFlag("debug.scda.vk_present_scaled", true);
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
-    LOGI("vulkan: profiling %s, descriptor cache %s", profile_ ? "on" : "off", descriptor_cache_ ? "on" : "off");
+    cold_cache_ = profile_ && DebugFlag("debug.scda.vk_cold_cache");
+    LOGI("vulkan: profiling %s, descriptor cache %s%s", profile_ ? "on" : "off", descriptor_cache_ ? "on" : "off",
+         cold_cache_ ? ", cold shader/pipeline cache (read/write disabled)" : "");
     glslang::InitializeProcess();
     if (!CreateInstance() || !CreateSurface() || !CreateDevice()) return false;
     if (!CreateSwapchain()) LOGW("vulkan: no swapchain yet, presents wait for the window");
@@ -1104,6 +1118,16 @@ bool VulkanBackend::CreateSwapchain() {
     // Android tells the size as the user sees it; the images are in the panel's own orientation
     if (caps.currentTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR))
         std::swap(extent.width, extent.height);
+    if (present_scaled_) {
+        // same aspect as the window so the stretch is uniform; never larger than the window
+        float f;
+        {
+            std::lock_guard lock(app::UiLock());
+            f = std::clamp(app::Get().render_percent / 100.0f, 0.1f, 1.0f);
+        }
+        extent.width = std::clamp(uint32_t(extent.width * f + 0.5f), caps.minImageExtent.width, caps.maxImageExtent.width);
+        extent.height = std::clamp(uint32_t(extent.height * f + 0.5f), caps.minImageExtent.height, caps.maxImageExtent.height);
+    }
     VkCompositeAlphaFlagBitsKHR alpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
     if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     uint32_t count = std::max(caps.minImageCount, 3u);
@@ -1238,7 +1262,7 @@ std::filesystem::path SpirvDir() { return app::ExeDir() / "shadercache" / "vulka
 
 void VulkanBackend::LoadPipelineCache() {
     std::vector<char> data;
-    if (std::ifstream f(PipelineCacheFile(), std::ios::binary); f) {
+    if (std::ifstream f(PipelineCacheFile(), std::ios::binary); f && !cold_cache_) {
         data.assign(std::istreambuf_iterator<char>(f), {});
     }
     VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
@@ -1254,7 +1278,7 @@ void VulkanBackend::LoadPipelineCache() {
 
 void VulkanBackend::SavePipelines() {
     std::lock_guard lock(cache_lock_);
-    if (!cache_ || !cache_dirty_) return;
+    if (!cache_ || !cache_dirty_ || cold_cache_) return;
     size_t n = 0;
     vkGetPipelineCacheData(dev_, cache_, &n, nullptr);
     std::vector<char> data(n);
@@ -1837,6 +1861,7 @@ void VulkanBackend::BindTargetTexture(const State& s, int stage, const TextureDe
     if (&t == draw_ds_) return;
     stages.rt[stage] = true;
     stages.levels[stage] = 1;
+    if (profile_) stats_.tex_rt++, stats_.tex_texels += uint64_t(t.w) * t.h;
     if (!t.depth && LatchCpuWrite(t)) {
         Surface su;
         su.header = s.textures[size_t(stage)];
@@ -1970,6 +1995,14 @@ void VulkanBackend::BindGuestTexture(int stage, const TextureDesc& d, const Form
     }
     if (fi.depth) stages.info[stage].shadow = ShadowDepthKind(d.format);
     stages.levels[stage] = tx.levels;
+    if (profile_) {
+        bool bc = fi.compressed && bc_;
+        (bc ? stats_.tex_bc : stats_.tex_raw)++;
+        (tx.levels > 1 ? stats_.tex_mip : stats_.tex_nomip)++;
+        if (tx.levels == 1 && d.width >= 256 && d.height >= 256) stats_.tex_nomip_big++;
+        if (fi.compressed && d.levels > 1 && tx.levels == 1) stats_.tex_bc_padded++;
+        stats_.tex_texels += uint64_t(d.width) * d.height;
+    }
     stages.bind[stage] = {tx.im.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 }
 
@@ -2017,6 +2050,7 @@ VkSampler VulkanBackend::StageSampler(const State& s, int i, const DrawTextures&
     if (an > 1 && aniso_) {
         ci.anisotropyEnable = VK_TRUE;
         ci.maxAnisotropy = std::min(float(an), props_.limits.maxSamplerAnisotropy);
+        if (profile_) stats_.tex_aniso++;
     }
     ci.addressModeU = Address(clamp && t[kTssAddressU] == kTaddressWrap ? kTaddressClamp : t[kTssAddressU]);
     ci.addressModeV = Address(clamp && t[kTssAddressV] == kTaddressWrap ? kTaddressClamp : t[kTssAddressV]);
@@ -2077,7 +2111,7 @@ VkShaderModule VulkanBackend::Module(const std::string& hlsl, EShLanguage stage,
     std::snprintf(name, sizeof(name), "%016llx.spv", (unsigned long long)hash);
     std::filesystem::path file = SpirvDir() / name;
     std::vector<uint32_t> spv;
-    if (std::ifstream f(file, std::ios::binary | std::ios::ate); f) {
+    if (std::ifstream f(file, std::ios::binary | std::ios::ate); f && !cold_cache_) {
         spv.resize(size_t(f.tellg()) / 4);
         f.seekg(0);
         f.read(reinterpret_cast<char*>(spv.data()), std::streamsize(spv.size() * 4));
@@ -2112,8 +2146,8 @@ VkShaderModule VulkanBackend::Module(const std::string& hlsl, EShLanguage stage,
         }
         glslang::GlslangToSpv(*prog.getIntermediate(stage), spv);
         std::error_code ec;
-        std::filesystem::create_directories(SpirvDir(), ec);
-        std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(spv.data()),
+        if (!cold_cache_) std::filesystem::create_directories(SpirvDir(), ec);
+        if (!cold_cache_) std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(spv.data()),
                                                     std::streamsize(spv.size() * 4));
     }
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -2928,8 +2962,25 @@ void VulkanBackend::CountFps() {
     }
 }
 
+void VulkanBackend::LogFrame() {
+    auto now = std::chrono::steady_clock::now();
+    double ms = frame_t_ == decltype(frame_t_){} ? 0 : std::chrono::duration<double, std::milli>(now - frame_t_).count();
+    uint64_t shaders = stats_.shaders - frame_shaders_, pipelines = stats_.pipelines - frame_pipelines_;
+    double shader_ms = stats_.shader_ms - frame_shader_ms_, pipeline_ms = stats_.pipeline_ms - frame_pipeline_ms_;
+    if (ms > 25 || shaders || pipelines)
+        LOGI("vk-frame: present=%llu interval=%.2fms compile=%llu/%.2fms pipelines=%llu/%.2fms",
+             (unsigned long long)presents_, ms, (unsigned long long)shaders, shader_ms, (unsigned long long)pipelines,
+             pipeline_ms);
+    frame_t_ = now;
+}
+
 void VulkanBackend::LogStats() {
-    if (++stats_.frames < 120) return;
+    LogFrame();
+    if (++stats_.frames < 120) {
+        frame_shaders_ = stats_.shaders, frame_pipelines_ = stats_.pipelines;
+        frame_shader_ms_ = stats_.shader_ms, frame_pipeline_ms_ = stats_.pipeline_ms;
+        return;
+    }
     const auto& s = stats_;
     double n = double(s.frames);
     LOGI("vk-perf: cache=%s frames=%llu draw=%.2fms descriptors=%.2fms wait=%.2fms acquire=%.2fms present=%.2fms "
@@ -2947,6 +2998,11 @@ void VulkanBackend::LogStats() {
          s.clears / n, s.full_clear_starts / n, s.clear_color_pixels / n / 1e6,
          s.clear_depth_pixels / n / 1e6, s.clear_stencil_pixels / n / 1e6);
     LOGI("vk-stages: skip-unused=%s skipped/frame=%.1f", skip_unused_stages_ ? "on" : "off", s.unused_stages / n);
+    LOGI("vk-textures: binds/frame bc=%.1f raw=%.1f mip=%.1f nomip=%.1f nomip>=256=%.1f bc-mips-dropped=%.1f "
+         "rt=%.1f aniso-samplers=%.1f avg-texels=%.0f",
+         s.tex_bc / n, s.tex_raw / n, s.tex_mip / n, s.tex_nomip / n, s.tex_nomip_big / n, s.tex_bc_padded / n,
+         s.tex_rt / n, s.tex_aniso / n,
+         double(s.tex_texels) / std::max<uint64_t>(s.tex_bc + s.tex_raw + s.tex_rt, 1));
     LOGI("vk-barriers: pass-end=%s pass-timestamps=%s", narrow_barriers_ ? "narrow" : "global",
          profile_passes_ ? "on" : "off");
     std::vector<std::pair<uint64_t, PassStats>> top(pass_stats_.begin(), pass_stats_.end());
@@ -2962,9 +3018,15 @@ void VulkanBackend::LogStats() {
     }
     pass_stats_.clear();
     stats_ = {};
+    frame_shaders_ = frame_pipelines_ = 0;
+    frame_shader_ms_ = frame_pipeline_ms_ = 0;
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
+    if (bool scaled = DebugFlag("debug.scda.vk_present_scaled", true); scaled != present_scaled_) {
+        present_scaled_ = scaled;
+        recreate_ = true;  // the next present makes the swapchain at the new size
+    }
     // Trace one frame per report while requested; exclude trace windows from benchmarks.
     trace_passes_ = DebugFlag("debug.scda.vk_trace");
 }
@@ -2980,6 +3042,7 @@ void VulkanBackend::ApplySettings() {
         shadows = app::Get().shadow_resolution;
     }
     if (std::fabs(scale - scale_) < 1e-4f && shadows == shadow_res_) return;
+    if (present_scaled_) recreate_ = true;  // the swapchain follows the render scale
     for (auto& [key, t] : targets_) {
         Release(t.im);
         Release(t.fb);
