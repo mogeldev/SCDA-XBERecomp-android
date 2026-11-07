@@ -59,6 +59,11 @@ struct Settings {
     bool hdr_rendering = false;
     bool tone_mapping = false;
     uint32_t ambient_occlusion = 0;  // screen space, from the scene's depth: 0 off, 1 SSAO, 2 GTAO
+    // OPTIMISATION (Android Vulkan): the display hardware upscales the frame; glow/brightness targets keep the
+    // console's size; shrinking an upscaled target reads once per tap (faster, the sun's reflection can flicker)
+    bool scaled_presentation = true;
+    bool native_effect_size = true;
+    bool fast_glow = false;
     bool async_shaders = true;       // a draw whose pipeline needs compiling is skipped until the build threads have it; scda.toml only
     bool custom_textures = true;     // images in textures\replacement\ beside the exe replace the game's
     bool dump_textures = false;      // each texture once into textures\dumps\ beside the exe

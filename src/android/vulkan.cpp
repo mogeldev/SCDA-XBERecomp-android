@@ -889,11 +889,11 @@ private:
     bool profile_ = false;
     bool profile_passes_ = true;
     bool narrow_barriers_ = false;
-    // Default on: swapchain at the render scale; the display hardware stretches it (debug.scda.vk_present_scaled=0 off).
+    // swapchain at the render scale; the display hardware stretches it
     bool present_scaled_ = false;
-    // Image-changing, user-approved, default on (property 0 disables). E1: targets of at most kEffectSide console
-    // pixels (glow/brightness chains) keep the console's size. E2: no box-averaged taps when an upscaled target is
-    // shrunk into a smaller one.
+    // OPTIMISATION menu rows (scaled_presentation, native_effect_size, fast_glow in scda.toml). E1: targets of at most
+    // kEffectSide console pixels (glow/brightness chains) keep the console's size. E2 (fast glow): no box-averaged taps
+    // when an upscaled target is shrunk into a smaller one; the sun's reflection can flicker, so it defaults off.
     static constexpr uint32_t kEffectSide = 256;
     bool effect_native_ = false;
     bool effect_single_tap_ = false;
@@ -961,9 +961,13 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     profile_ = DebugFlag("debug.scda.vk_profile");
     profile_passes_ = DebugFlag("debug.scda.vk_profile_passes", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
-    present_scaled_ = DebugFlag("debug.scda.vk_present_scaled", true);
-    effect_native_ = DebugFlag("debug.scda.vk_effect_native", true);
-    effect_single_tap_ = DebugFlag("debug.scda.vk_effect_single_tap", true);
+    {
+        // OPTIMISATION menu rows; ApplySettings follows later changes
+        std::lock_guard lock(app::UiLock());
+        present_scaled_ = app::Get().scaled_presentation;
+        effect_native_ = app::Get().native_effect_size;
+        effect_single_tap_ = app::Get().fast_glow;
+    }
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     cold_cache_ = profile_ && DebugFlag("debug.scda.vk_cold_cache");
@@ -3071,15 +3075,6 @@ void VulkanBackend::LogStats() {
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
     narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
-    if (bool native = DebugFlag("debug.scda.vk_effect_native", true); native != effect_native_) {
-        effect_native_ = native;
-        rebuild_targets_ = true;  // ApplySettings makes the targets again at their new sizes
-    }
-    effect_single_tap_ = DebugFlag("debug.scda.vk_effect_single_tap", true);
-    if (bool scaled = DebugFlag("debug.scda.vk_present_scaled", true); scaled != present_scaled_) {
-        present_scaled_ = scaled;
-        recreate_ = true;  // the next present makes the swapchain at the new size
-    }
     // Trace one frame per report while requested; exclude trace windows from benchmarks.
     trace_passes_ = DebugFlag("debug.scda.vk_trace");
 }
@@ -3089,10 +3084,22 @@ void VulkanBackend::LogStats() {
 void VulkanBackend::ApplySettings() {
     float scale;
     uint32_t shadows;
+    bool scaled, native;
     {
         std::lock_guard lock(app::UiLock());
         scale = app::RenderScale(guest_h_);
         shadows = app::Get().shadow_resolution;
+        scaled = app::Get().scaled_presentation;
+        native = app::Get().native_effect_size;
+        effect_single_tap_ = app::Get().fast_glow;  // read per draw, no target change
+    }
+    if (scaled != present_scaled_) {
+        present_scaled_ = scaled;
+        recreate_ = true;  // the next present makes the swapchain at the new size
+    }
+    if (native != effect_native_) {
+        effect_native_ = native;
+        rebuild_targets_ = true;  // the effect targets are made again at their new sizes
     }
     if (std::fabs(scale - scale_) < 1e-4f && shadows == shadow_res_ && !rebuild_targets_) return;
     rebuild_targets_ = false;

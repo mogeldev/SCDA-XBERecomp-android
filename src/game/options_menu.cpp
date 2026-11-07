@@ -108,7 +108,7 @@ constexpr int kCaptionModes[] = {0, 1, 2};
 constexpr int kCaptionCount = int(std::size(kCaptionModes));
 // per caption
 const std::vector<std::string_view> kSections[] = {
-    {"DISPLAY", "GRAPHICS", "GENERAL"},
+    {"DISPLAY", "GRAPHICS", "PERFORMANCE", "GENERAL"},
     {"MOUSE", "KEYBOARD"},
     {"GENERAL", "GYRO", "BUTTONS"},
 };

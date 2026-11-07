@@ -334,7 +334,7 @@ enum RowId {
     kSniperSensitivity, kFmvScale, kColourBlind, kAimHorizontal, kAimVertical, kInvertMouseX, kInvertPadX, kInvertPadY,
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
     kVibration, kGyroAiming, kGyroSensitivity, kGyroAxis, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
-    kTextureReplacement, kTextureDumping, kDumpFormat
+    kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow
 };
 
 using rows::Kind;
@@ -349,6 +349,16 @@ bool VersusHides(int id) {
     if (!kVersus) return false;
     return id == kShaderModel || id == kHdr || id == kToneMapping || id == kShadowResolution ||
            id == kShadowDistance || id == kShadowFilter || id == kTickRate || id == kInputDelay || IsGyroRow(id);
+}
+
+// the PERFORMANCE rows only the Android Vulkan renderer applies
+bool DesktopHides(int id) {
+#ifdef __ANDROID__
+    (void)id;
+    return false;
+#else
+    return id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow;
+#endif
 }
 
 // Android fills the screen and renders the Xbox SM1.1 look. Only offer settings its host actually applies.
@@ -403,6 +413,10 @@ constexpr Row kSettingsRows[] = {
     {Kind::Value, kShadowResolution, "SHADOW RESOLUTION"},
     {Kind::Value, kShadowDistance, "SHADOW DISTANCE"},
     {Kind::Value, kShadowFilter, "SHADOW FILTER"},
+    {Kind::Heading, -1, "PERFORMANCE"},
+    {Kind::Value, kScaledPresentation, "SCREEN UPSCALING"},
+    {Kind::Value, kNativeEffectSize, "GLOW RESOLUTION"},
+    {Kind::Value, kFastGlow, "GLOW QUALITY"},
     {Kind::Heading, -1, "GENERAL"},
     {Kind::Value, kSkipIntros, "SKIP INTROS"},
     {Kind::Value, kPauseOnFocusLoss, "PAUSE ON FOCUS LOSS"},
@@ -662,6 +676,19 @@ bool StepGraphicsRow(int id, int step, Settings& s, char (&text)[64]) {
             std::snprintf(text, sizeof(text), scale == 1 ? "%ux (DEFAULT)" : "%ux", scale);
             return true;
         }
+        // PERFORMANCE: the values say what each choice costs or risks
+        case kScaledPresentation:
+            if (step) s.scaled_presentation = !StepIndex(!s.scaled_presentation, step, 2);
+            std::snprintf(text, sizeof(text), "%s", s.scaled_presentation ? "DISPLAY (FASTER)" : "GPU");
+            return true;
+        case kNativeEffectSize:
+            if (step) s.native_effect_size = !StepIndex(!s.native_effect_size, step, 2);
+            std::snprintf(text, sizeof(text), "%s", s.native_effect_size ? "ORIGINAL (FASTER)" : "HIGH");
+            return true;
+        case kFastGlow:
+            if (step) s.fast_glow = StepIndex(s.fast_glow, step, 2);
+            std::snprintf(text, sizeof(text), "%s", s.fast_glow ? "FAST (MAY FLICKER)" : "HIGH (DEFAULT)");
+            return true;
         case kShadowFilter:
             if (step) s.shadow_filter = StepIndex(s.shadow_filter >= 3, step, 2) ? 3 : 1;
             std::snprintf(text, sizeof(text), "%s", s.shadow_filter >= 3 ? "SM3 SOFT" : "SM1.1 (DEFAULT)");
@@ -1086,9 +1113,13 @@ void DrawRows(int page) {
     const Row* list = rows::Page(page, &count);
     for (size_t i = 0; i < count; i++) {
         const Row& r = list[i];
-        if (r.kind == Kind::Value && VersusHides(r.id)) continue;
+        if (r.kind == Kind::Value && (VersusHides(r.id) || DesktopHides(r.id))) continue;
         if (r.kind == Kind::Heading) {
-            Section(r.label);
+            // a heading whose rows are all hidden here (PERFORMANCE off Android) is left out with them
+            bool any = false;
+            for (size_t j = i + 1; !any && j < count && list[j].kind != Kind::Heading; j++)
+                any = list[j].kind != Kind::Value || !DesktopHides(list[j].id);
+            if (any) Section(r.label);
         } else if (r.kind == Kind::Value && (r.id == kPlayer1 || r.id == kPlayer2)) {
             PlayerRow(r.label, r.id == kPlayer1 ? 0 : 1);
         } else if (r.kind == Kind::Value && r.id == kMicrophone) {
@@ -1327,7 +1358,8 @@ std::vector<std::string> Choices(const Row& row, int* current) {
 
 bool Shown(const Row& row) {
     std::lock_guard lock(UiLock());
-    bool hidden = row.id == kMicrophone || row.id == kPushToTalk || VersusHides(row.id) || AndroidHides(row.id);
+    bool hidden = row.id == kMicrophone || row.id == kPushToTalk || VersusHides(row.id) || AndroidHides(row.id) ||
+                  DesktopHides(row.id);
     return row.kind != Kind::Value || !hidden;
 }
 

@@ -11,6 +11,7 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 - Must run on Snapdragon/Adreno and Mali. Mali has no BC textures, so they are decoded on the CPU.
 - The game code is recompiled on the player's Windows PC into `libscda_code.so`. Players put it and the extracted campaign files into one ZIP; Android imports that ZIP on first boot through the system file picker. `tools/android-builder/` provides the self-contained Windows builder package.
 - Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor, GitHub Actions release packaging. Build and package locally.
+- Windows/desktop game builds (D3D12 renderer, desktop menus) are out of scope and not maintained. Shared code may break them; do not build or test them. The Windows player builder (`tools/android-builder/`) stays in scope.
 - minSdk 30.
 
 ## Phases
@@ -102,7 +103,7 @@ Stutter and compile-hitch measurement (Adreno 710, profiling on, opt-in `debug.s
 - Remaining large hitches are load/save/autosave and video transitions (title waits up to 326 ms for a flush and 516 ms for a read-back), not compilation. ~350 frames at 25-33 ms are 120 Hz pacing with a GPU near 12-18 ms per frame.
 - Decision: an RPCS3-style asynchronous interpreter/fallback (estimated 4-7 weeks) is not worthwhile for repeat play. Possible later: record/warm pipeline recipes for first launch after shader-source changes.
 
-Scaled presentation (default on, `debug.scda.vk_present_scaled=0` disables; read at startup, and live at profiling report boundaries):
+Scaled presentation (now the PERFORMANCE menu row SCREEN UPSCALING, default DISPLAY; live):
 - Swapchain uses the window aspect at `render_percent` (50%: 610x1356 instead of 1220x2712). SurfaceFlinger reports `Device` composition, so the display hardware stretches it without a GPU composition pass. Recreated when the render scale changes.
 - Stationary Iceland, 50%, live off/on/off/on: GPU 16.18/14.84/16.31/14.82 ms, FPS 56.76/61.37/56.77/61.58; draws unchanged (~561). Screenshot differences on/off match off/off noise (moving sun glow only); zoomed scene and HUD crops equivalent because the game renders into its 813x610 target anyway.
 - Perfetto GPU counters, same comparison: write bandwidth 551 -> 460 MB/s median, fragments 744 -> 618 M/s; clocks unchanged at ~940 MHz.
@@ -114,11 +115,11 @@ GPU counter profile (Android GPU Inspector 3.3.3 counter list, Perfetto `gpu.cou
 - Texture statistics (`vk-textures`, profiling only), same scene: ~1,190 binds/frame = ~655 BC (stay compressed; `BC textures yes`), ~437 uncompressed, ~99 render targets. ~445 with mips, ~647 without (average ~48k texels), ~52 without mips at >=256x256 (as the game supplies them). No BC mip chains dropped for non-multiple-of-4 sizes; no anisotropic samplers.
 - All ~437 uncompressed binds are console A8R8G8B8 (32-bit), average ~2,660 texels (~52x52). Native 16/8-bit host formats would gain nothing here; not implemented. Mip generation or runtime compression would change the image and were not pursued.
 - Per-pass GPU time by vision mode (per-pass timestamps on, stationary Iceland 50%, A on): total 15.4 / 14.7 / 8.4 / 8.2 ms for normal / night / thermal / EMF. Main scene 10.6 / 10.7 / 5.7 / 6.2 ms. Glow chain 1 (325 -> 20 px, all modes) 2.6 / 2.6 / 1.9 / 1.2 ms; its first 325x325 shrink of the scene alone ~0.8 ms in every mode (four stages, each a 2x2 box tap = 16 reads per pixel). Chain 2 with 16x16 read-back (probably eye adaptation) only in normal view, ~1.0 ms. Passes per frame 36 / 28 / 11 / 13. Effect-to-pass mapping inferred from traces/mode differences.
-- Image-changing effect options, **default on since user approval of E3** (`debug.scda.vk_effect_native=0` / `debug.scda.vk_effect_single_tap=0` disable; read at startup, live while profiling):
+- Image-changing effect options, now in the in-game menu (Recomp Settings > PERFORMANCE, Android only, live; `scda.toml` keys in brackets): SCREEN UPSCALING `DISPLAY (FASTER)`/`GPU` [`scaled_presentation`, default on], GLOW RESOLUTION `ORIGINAL (FASTER)`/`HIGH` [`native_effect_size` = E1, default on], GLOW QUALITY `HIGH (DEFAULT)`/`FAST (MAY FLICKER)` [`fast_glow` = E2, default off]. The former debug properties were removed.
   - E1: colour targets of at most 256 console pixels per side and smaller than the screen keep the console's size instead of the render scale. Copies between targets of different scale use a filtered `vkCmdBlitImage`. Switching rebuilds targets.
   - E2: no box-averaged taps when an upscaled target is shrunk into a smaller one (single bilinear read per stage).
   - Live base/E1/E2/E3/base, GPU ms: normal 15.39/14.47/14.27/13.60/15.41 (E3 -1.79 ms, FPS 58.2 -> 64.4); night 14.68/14.06/13.89/13.30/14.69 (E3 -1.38 ms). Thermal/EMF are not GPU bound (85-105 FPS at 120 Hz): Android lowers the GPU clock with less work (thermal E3 739 vs 873 MHz, EMF E3 794 vs 864 MHz), so frame time stays ~8.2-9.5 ms and is not a fair measure there.
-  - Screenshots in all four modes look equivalent to the agent; pixel differences from baseline are close to baseline/baseline noise (animated sun glow and vision-mode noise). User approved E3 as default. Not verified: flicker while moving, other levels' small effect targets.
+  - Screenshots in all four modes look equivalent to the agent; pixel differences from baseline are close to baseline/baseline noise (animated sun glow and vision-mode noise). User first approved E3, then saw the sun's reflection flicker with E2 while playing; E1 alone does not flicker. At 100% render resolution: none 15 FPS, E1 19 FPS, E3 25 FPS (user-reported). Hence E1 default on, E2 opt-in. User confirmed menu, translations and live switching on the phone. Not verified: other levels' small effect targets, desktop build of the menu change.
 - Maybe later: C) do not store depth after its final use in a frame; D) merge/reorder passes. Neither started; C requires proving no later depth read; D can change output.
 
 Remaining limitations:

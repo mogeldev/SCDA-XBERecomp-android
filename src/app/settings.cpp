@@ -131,6 +131,9 @@ void Load() {
     // true was the old ON, now SSAO
     if (auto on = t["ambient_occlusion"].value<bool>()) s.ambient_occlusion = *on;
     s.ambient_occlusion = std::min(t["ambient_occlusion"].value_or(s.ambient_occlusion), 2u);
+    s.scaled_presentation = t["scaled_presentation"].value_or(s.scaled_presentation);
+    s.native_effect_size = t["native_effect_size"].value_or(s.native_effect_size);
+    s.fast_glow = t["fast_glow"].value_or(s.fast_glow);
     s.async_shaders = t["async_shaders"].value_or(s.async_shaders);
     s.custom_textures = t["custom_textures"].value_or(s.custom_textures);
     s.dump_textures = t["dump_textures"].value_or(s.dump_textures);
@@ -214,6 +217,9 @@ toml::table Table() {
                   {"hdr_rendering", s.hdr_rendering},
                   {"tone_mapping", s.tone_mapping},
                   {"ambient_occlusion", int64_t(s.ambient_occlusion)},
+                  {"scaled_presentation", s.scaled_presentation},
+                  {"native_effect_size", s.native_effect_size},
+                  {"fast_glow", s.fast_glow},
                   {"async_shaders", s.async_shaders},
                   {"custom_textures", s.custom_textures},
                   {"dump_textures", s.dump_textures},
