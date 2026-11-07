@@ -58,6 +58,16 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn('this::showRequirements', setup)
         self.assertIn('worker.interrupt()', setup)
 
+    def test_setup_starts_in_fixed_landscape(self):
+        for path, activity in [
+            ('android/src/main/AndroidManifest.xml', 'OnDeviceSetupActivity'),
+            ('tools/on-device-setup/src/debug/AndroidManifest.xml', 'LocalSetupActivity'),
+            ('tools/on-device-setup-ui/src/main/AndroidManifest.xml', 'SetupPreviewActivity'),
+        ]:
+            nodes = ET.parse(ROOT / path).findall('.//activity')
+            node = next(n for n in nodes if n.get(ANDROID + 'name') == 'io.github.mogeldev.scda.' + activity)
+            self.assertEqual(node.get(ANDROID + 'screenOrientation'), 'landscape', path)
+
     def test_policy_matches_probe(self):
         probe = ROOT / 'tools/on-device-probe/src/main/java/io/github/mogeldev/scda/compilerprobe/BuildJobs.java'
         expected = probe.read_text().replace('package io.github.mogeldev.scda.compilerprobe;', 'package io.github.mogeldev.scda;')

@@ -4,7 +4,7 @@
         <activity android:name="io.github.mogeldev.scda.OnDeviceSetupActivity" tools:node="remove" />
         <activity-alias android:name="io.github.mogeldev.scda.SetupActivity" tools:node="remove" />
         <activity android:name="io.github.mogeldev.scda.LocalSetupActivity"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
             android:exported="true">
             <intent-filter>
