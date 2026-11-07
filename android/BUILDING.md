@@ -17,6 +17,6 @@ Gradle automatically runs `tools/on-device-setup/build.py --production --stage-o
 
 Use `-Pabi=x86_64` for emulator builds, which retain the prebuilt-ZIP path. For private development only, `-PdevCode` embeds generated game code—**never distribute that APK**. Never commit/share game assets, XBE, generated sources/objects or `libscda_code.so`.
 
-Before publishing binaries, satisfy [toolchain licensing/source obligations](TOOLCHAIN-NOTICES.md), signing compatibility and release validation gates. The production-package device/upgrade/manual-picker checks remain outstanding; the isolated phone-tested app is not proof of an upgrade pass.
+The bundled compiler/toolchain corresponding-source and licensing obligations have been completed for this build; see [toolchain notices](TOOLCHAIN-NOTICES.md). The production-package upgrade/manual-picker checks, low-storage stress and 16-KiB device coverage remain outstanding; the isolated phone-tested workflow is not proof of an upgrade pass.
 
 [Tests](tests/README.md) · [Compiler/import validation](../tools/on-device-setup/README.md) · [Windows builder packaging](../tools/android-builder/README.md#maintainers)

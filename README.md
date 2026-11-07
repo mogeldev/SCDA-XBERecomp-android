@@ -21,9 +21,9 @@ Windows is optional: the [Windows builder](tools/android-builder/README.md) stil
 
 ## Status
 
-**Testing → RC → Stable**, starting at **0.1.0**; debug signing only. The [current prerelease](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) is **source-only—no APK download yet**.
+**Testing → RC → Stable**, starting at **0.1.0**; debug signing only. The [current prerelease](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) is **0.1.0-testing.2** with an ARM64 APK download.
 
-XISO → on-device compilation → gameplay confirmed in the isolated test app on Redmi Note 13 Pro 5G / Adreno 710. Production-package upgrade/picker tests and toolchain distribution compliance remain open; Mali is untested.
+ISO → on-device compilation → gameplay confirmed on Redmi Note 13 Pro 5G / Adreno 710. Toolchain corresponding-source and licensing requirements are complete for this testing build. Production-package upgrade/picker tests, low-storage stress and 16-KiB device coverage remain open; Mali is untested.
 
 [Build](android/BUILDING.md) · [Tests](android/tests/README.md) · [Validation](tools/on-device-setup/README.md) · [Port notes](ANDROID_PORT_NOTES.md) · [Release policy](RELEASING.md)
 
