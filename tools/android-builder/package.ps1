@@ -81,7 +81,7 @@ try {
     $temp = Join-Path $repo ('out/' + [Guid]::NewGuid().ToString('N') + '.zip')
     Compress-Archive -Path "$stage/*" -DestinationPath $temp -CompressionLevel Optimal
     Move-Item -LiteralPath $temp -Destination $output -Force
-    Write-Host "Created $output (builder $version: GUI with companion tools; no game assets or generated code)."
+    Write-Host "Created $output (builder ${version}: GUI with companion tools; no game assets or generated code)."
 } finally {
     if ($temp -and (Test-Path -LiteralPath $temp)) { Remove-Item -LiteralPath $temp -Force }
     Remove-Item -LiteralPath $stage -Recurse -Force

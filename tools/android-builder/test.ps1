@@ -104,7 +104,7 @@ try {
     Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'iso-*').Count -eq 0) 'ISO extraction was not cleaned up.'
     $gameZip = [IO.Compression.ZipFile]::OpenRead($isoZip)
     try {
-        Assert ($gameZip.Entries.Count -eq 4) 'Unexpected ISO-to-ZIP shape.'
+        Assert ($gameZip.Entries.Count -eq 5 -and $gameZip.GetEntry('scda-version.txt')) 'Unexpected ISO-to-ZIP shape.'
         $xbeEntry = $gameZip.GetEntry('assets/default.xbe').Open()
         try {
             $sha = [Security.Cryptography.SHA1]::Create()
