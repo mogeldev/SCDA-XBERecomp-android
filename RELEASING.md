@@ -12,7 +12,6 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 
 - Never move, delete or reuse a published `v0.*` or `v1.*`-style version tag. GitHub's version-tag ruleset blocks tag updates/deletions. Legacy uppercase `V1` predates this policy; do not reuse it.
 - Fixes create a new version/tag (`testing.2`, `rc.2`, `0.1.1`, etc.). Tags may share a commit: the stable tag points at the approved RC commit.
-- **Corresponding source is linked, not re-attached.** The LGPL source bundle for the bundled toolchain libraries (libiconv and the others listed in its README) is attached once, to [`v0.1.0-testing.3`](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.1.0-testing.3) (`SCDA-Android-0.1.0-testing.3-corresponding-source.zip`). Later release notes link to that bundle and state its SHA-256. Before each release, compare the APK's `lib/` and `assets/compiler/` files against the bundle release's APK, excluding the project's own `libscda_*` libraries. If any bundled third-party library changed, attach a new bundle to that release and link to it from then on. Never delete a release that holds the linked bundle.
 - Never silently replace published assets. Publish SHA-256 checksums, source commit and signing-certificate fingerprint. A withdrawn build gets a prominent warning; its version is never reused.
 - Increment Android `versionCode` for every new APK build/version. It must not go backwards even though the version name is restarting at 0.1.0. The first testing build uses code 3; codes 1 and 2 were already used during development.
 - Promote RC to stable by copying the exact approved APK and matching builder/checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
@@ -40,7 +39,7 @@ Complete the following on the actual signed release candidate; features are froz
 - [ ] Manual picker cancellation/errors and storage-failure cleanup without destroying existing game files.
 - [ ] Production-package upgrade preserves game files, saves/settings, launcher entry and signing compatibility.
 - [ ] Controller, save/load, background/resume and mission transition checks; publish tested devices/GPUs/API levels.
-- [ ] Correct runtime/compiler packaging, no private assets/XBE/generated game code, licenses, corresponding source/build recipes (linked bundle still matches, see above) and SHA-256 checksums.
+- [ ] Correct runtime/compiler packaging, no private assets/XBE/generated game code, licenses, corresponding source/build recipes and SHA-256 checksums.
 - [ ] Known risks documented, including untested 16-KiB devices, GPUs and campaign areas.
 
 ### Stable
