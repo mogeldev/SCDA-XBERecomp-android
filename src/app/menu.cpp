@@ -334,7 +334,8 @@ enum RowId {
     kSniperSensitivity, kFmvScale, kColourBlind, kAimHorizontal, kAimVertical, kInvertMouseX, kInvertPadX, kInvertPadY,
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
     kVibration, kGyroAiming, kGyroSensitivity, kGyroAxis, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
-    kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow
+    kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow,
+    kTouchControls, kTouchOpacity
 };
 
 using rows::Kind;
@@ -357,7 +358,8 @@ bool DesktopHides(int id) {
     (void)id;
     return false;
 #else
-    return id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow;
+    return id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow || id == kTouchControls ||
+           id == kTouchOpacity;
 #endif
 }
 
@@ -470,6 +472,8 @@ const std::vector<Row>& PadRows() {
                                 {Kind::Value, kInvertPadY, "INVERT Y AXIS"},
                                 {Kind::Value, kPadDeadZone, "DEADZONE"},
                                 {Kind::Value, kVibration, "VIBRATION STRENGTH"},
+                                {Kind::Value, kTouchControls, "TOUCH CONTROLS"},
+                                {Kind::Value, kTouchOpacity, "TOUCH CONTROLS OPACITY"},
                                 {Kind::Heading, -1, "GYRO"},
                                 {Kind::Value, kGyroAiming, "GYRO AIMING"},
                                 {Kind::Value, kGyroSensitivity, "GYRO SENSITIVITY"},
@@ -500,6 +504,7 @@ bool ShaderModel3Row(int id) { return id == kHdr || id == kToneMapping; }
 bool Greyed(int id) {
     if (id == kHdrOutput) return !g_hdr_display;
     if (id == kDumpFormat) return !Get().dump_textures;
+    if (id == kTouchOpacity) return Get().touch_controls == kTouchOff;
     return ShaderModel3Row(id) && Get().shader_model < 3;
 }
 
@@ -807,6 +812,17 @@ void StepGeneralRow(int id, int step, Settings& s, char (&text)[64]) {
             if (s.vibration_strength == 100) std::snprintf(text, sizeof(text), "100%% (DEFAULT)");
             else std::snprintf(text, sizeof(text), "%u%%", s.vibration_strength);
             break;
+        case kTouchControls: {
+            constexpr const char* kNames[] = {"AUTOMATIC (DEFAULT)", "ON", "OFF"};
+            StepName(s.touch_controls, kNames, step, text);
+            break;
+        }
+        case kTouchOpacity:
+            // 10% to 100% in steps of 10
+            if (step) s.touch_opacity = uint32_t(StepRange(int(s.touch_opacity), 10, 100, 10, step));
+            if (s.touch_opacity == 50) std::snprintf(text, sizeof(text), "50%% (DEFAULT)");
+            else std::snprintf(text, sizeof(text), "%u%%", s.touch_opacity);
+            break;
         case kPadDeadZone: {
             float game = input::GameDeadZone();
             float zone = s.pad_dead_zone > 0.0f ? s.pad_dead_zone : game;
@@ -855,6 +871,8 @@ void RestoreDefaults(int page) {
         Get().invert_pad_y = false;
         Get().pad_dead_zone = 0.0f;
         Get().vibration_strength = 100;
+        Get().touch_controls = kTouchAuto;
+        Get().touch_opacity = 50;
         Get().gyro = gyro::Settings{};
         Get().pad_horizontal_sensitivity = Get().pad_vertical_sensitivity = 1.0f;
         Get().pad_aim_horizontal_sensitivity = Get().pad_aim_vertical_sensitivity = 1.0f;
@@ -886,6 +904,8 @@ void RestoreDefaults(int page) {
     Get().invert_pad_y = keep.invert_pad_y;
     Get().pad_dead_zone = keep.pad_dead_zone;
     Get().vibration_strength = keep.vibration_strength;
+    Get().touch_controls = keep.touch_controls;
+    Get().touch_opacity = keep.touch_opacity;
     Get().gyro = keep.gyro;
     Get().pad_horizontal_sensitivity = keep.pad_horizontal_sensitivity;
     Get().pad_vertical_sensitivity = keep.pad_vertical_sensitivity;

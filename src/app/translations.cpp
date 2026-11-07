@@ -176,6 +176,8 @@ constexpr Entry kEntries[] = {
     {"WORLD", {u"Monde", u"Welt", u"Mondo", u"Mundo"}},
     {"NONE", {u"Aucun", u"Keine", u"Nessuno", u"Ninguno"}},
     {"TOUCHPAD", {u"Pavé tactile", u"Touchpad", u"Touchpad", u"Panel táctil"}},
+    {"TOUCH CONTROLS", {u"Commandes tactiles", u"Touch-Steuerung", u"Controlli touch", u"Controles táctiles"}},
+    {"TOUCH CONTROLS OPACITY", {u"Opacité des commandes tactiles", u"Deckkraft der Touch-Steuerung", u"Opacità controlli touch", u"Opacidad de los controles táctiles"}},
     {"MISC", {u"Divers", u"Sonstige", u"Varie", u"Varios"}},
     {"RIGHT PADDLE 1", {u"Palette droite 1", u"Paddle rechts 1", u"Paletta destra 1", u"Palanca derecha 1"}},
     {"LEFT PADDLE 1", {u"Palette gauche 1", u"Paddle links 1", u"Paletta sinistra 1", u"Palanca izquierda 1"}},

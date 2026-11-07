@@ -1,6 +1,6 @@
 # Splinter Cell: Double Agent — Android
 
-Unofficial **original Xbox → Android ARM64** port using static recompilation, Vulkan and SDL3. **Campaign only; controller required.** No touch controls, co-op, versus or networking.
+Unofficial **original Xbox → Android ARM64** port using static recompilation, Vulkan and SDL3. **Campaign only; controller recommended, touch controls available.** No co-op, versus or networking.
 
 **Bring your own legally acquired Xbox game.** No game assets or recompiled game code are included. PC/Xbox 360 versions are not supported.
 

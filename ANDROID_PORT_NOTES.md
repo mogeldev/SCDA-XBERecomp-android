@@ -6,7 +6,7 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 
 - Native Android port of the SCDA Xbox recomp, released for other players. The fork may diverge from upstream.
 - Campaign only (default.xbe). No co-op, versus, networking or voice. Starting versus shows a notice.
-- Controller only. No touch, mouse or keyboard.
+- Controller, or the on-screen touch controls (TouchControls.java, shown while no controller is plugged in; Controller page: TOUCH CONTROLS AUTOMATIC/ON/OFF and opacity). No mouse or keyboard.
 - Shader Model 1.1 Xbox look only. No SM3, HDR, AO, SMAA or MSAA.
 - Must run on Snapdragon/Adreno and Mali. Mali has no BC textures, so they are decoded on the CPU.
 - The game code is recompiled on the player's Windows PC into `libscda_code.so`. Players put it and the extracted campaign files into one ZIP; Android imports that ZIP on first boot through the system file picker. `tools/android-builder/` provides the self-contained Windows builder package.

@@ -154,6 +154,8 @@ void Load() {
     s.pad_aim_vertical_sensitivity =
         float(t["pad_aim_vertical_sensitivity"].value_or(double(s.pad_aim_vertical_sensitivity)));
     s.vibration_strength = std::min(t["vibration_strength"].value_or(s.vibration_strength), 200u);
+    s.touch_controls = std::min(t["touch_controls"].value_or(s.touch_controls), kTouchOff);
+    s.touch_opacity = std::clamp(t["touch_opacity"].value_or(s.touch_opacity), 10u, 100u);
     LoadGyro(t, s.gyro);
     s.free_look_sensitivity = float(t["free_look_sensitivity"].value_or(double(s.free_look_sensitivity)));
     s.weapon_sensitivity = float(t["weapon_sensitivity"].value_or(double(s.weapon_sensitivity)));
@@ -236,6 +238,8 @@ toml::table Table() {
                   {"pad_aim_horizontal_sensitivity", double(s.pad_aim_horizontal_sensitivity)},
                   {"pad_aim_vertical_sensitivity", double(s.pad_aim_vertical_sensitivity)},
                   {"vibration_strength", int64_t(s.vibration_strength)},
+                  {"touch_controls", int64_t(s.touch_controls)},
+                  {"touch_opacity", int64_t(s.touch_opacity)},
                   {"gyro_aiming", s.gyro.enabled},
                   {"gyro_sensitivity", double(s.gyro.sensitivity)},
                   {"gyro_axis", int64_t(s.gyro.axis)},

@@ -17,6 +17,8 @@ namespace app {
 
 inline constexpr int kVersion = 3;  // release number, the GitHub release tag is V<number>
 inline constexpr uint32_t kFpsCapRefresh = 1;  // fps_cap: the monitor's refresh rate
+// touch_controls: shown while no controller is plugged in, always, never
+inline constexpr uint32_t kTouchAuto = 0, kTouchOn = 1, kTouchOff = 2;
 // versus caps top out here, as SCCT PC versus, so a player's net traffic stays bounded; UNLIMITED lifts it
 inline constexpr uint32_t kVersusMaxFps = 240;
 
@@ -81,6 +83,8 @@ struct Settings {
     float pad_aim_horizontal_sensitivity = 1.0f;
     float pad_aim_vertical_sensitivity = 1.0f;
     uint32_t vibration_strength = 100;  // percent of the game's rumble, 0 to 200
+    uint32_t touch_controls = 0;        // Android's on-screen controller: kTouchAuto, kTouchOn or kTouchOff
+    uint32_t touch_opacity = 50;        // its percent, 10 to 100
     gyro::Settings gyro;               // story only: the controller's gyro turns the view, beside the right stick
     // versus only, in place of mouse_sensitivity: third person, weapon raised, sniper scope
     float free_look_sensitivity = 1.0f;

@@ -78,7 +78,7 @@ final class SetupView extends ScrollView {
             params.setMarginStart(dp(12));
             choices.addView(folder, params);
         }
-        TextView facts = text("Controller required  ·  Saves and settings unchanged", 11, MUTED, false);
+        TextView facts = text("Controller recommended, touch controls available  ·  Saves and settings unchanged", 11, MUTED, false);
         facts.setPadding(0, dp(10), 0, dp(4));
         card.addView(facts);
 

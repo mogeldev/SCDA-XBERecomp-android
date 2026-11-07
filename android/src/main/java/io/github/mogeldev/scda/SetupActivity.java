@@ -137,11 +137,11 @@ public class SetupActivity extends Activity {
                 + "Archives may contain one ISO or one game folder. Encrypted/split archives and CHD/CSO/CCI are unsupported.\n\n"
                 + "Allow about 3.5 GB for campaign files, plus the input copy, temporary extraction and at least 512 MiB for compilation. "
                 + "Compilation took 6–8 minutes on the tested phone, excluding import. Keep setup open; Back cancels.\n\n"
-                + "Matching prebuilt-library ZIPs also work. Saves and settings are not changed. Controller required."
+                + "Matching prebuilt-library ZIPs also work. Saves and settings are not changed. Controller recommended; touch controls are available."
             : "Use a ZIP from the matching Windows builder. ZIP root: libscda_code.so and assets/. "
                 + "Inside assets/: default.xbe, Default/ and Media/.\n\n"
                 + "Allow space for the extracted game in addition to the ZIP. Keep setup open; Back cancels. "
-                + "Saves and settings are not changed. Controller required.";
+                + "Saves and settings are not changed. Controller recommended; touch controls are available.";
         new android.app.AlertDialog.Builder(this).setTitle("Requirements").setMessage(message)
             .setPositiveButton("Close", null).show();
     }

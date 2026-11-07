@@ -38,6 +38,37 @@ bool SDLCALL Lifecycle(void*, SDL_Event* e) {
     return true;
 }
 
+void JNICALL TouchSet(JNIEnv*, jclass, jint buttons, jint left, jint right, jint lx, jint ly, jint rx, jint ry) {
+    input::SetTouch(uint32_t(buttons), uint8_t(left), uint8_t(right), int16_t(lx), int16_t(ly), int16_t(rx),
+                    int16_t(ry));
+}
+
+jint JNICALL TouchOpacity(JNIEnv*, jclass) { return input::TouchOpacity(); }
+
+// the on-screen controller (TouchControls.java) over SDL's view; it shows itself when the settings say
+void AttachTouchControls() {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    // the app's class loader: this library came in through dlopen
+    jobject loader = env->CallObjectMethod(
+        activity, env->GetMethodID(env->GetObjectClass(activity), "getClassLoader", "()Ljava/lang/ClassLoader;"));
+    jclass loader_class = env->FindClass("java/lang/ClassLoader");
+    auto touch = static_cast<jclass>(env->CallObjectMethod(
+        loader, env->GetMethodID(loader_class, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;"),
+        env->NewStringUTF("io.github.mogeldev.scda.TouchControls")));
+    const JNINativeMethod natives[] = {
+        {const_cast<char*>("nativeSet"), const_cast<char*>("(IIIIIII)V"), reinterpret_cast<void*>(TouchSet)},
+        {const_cast<char*>("nativeOpacity"), const_cast<char*>("()I"), reinterpret_cast<void*>(TouchOpacity)},
+    };
+    if (!env->ExceptionCheck() && touch && env->RegisterNatives(touch, natives, 2) == JNI_OK)
+        env->CallStaticVoidMethod(touch, env->GetStaticMethodID(touch, "attach", "(Landroid/app/Activity;)V"),
+                                  activity);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("touch controls: not attached");
+    }
+}
+
 std::string Property(const char* name) {
     char value[PROP_VALUE_MAX] = {};
     __system_property_get(name, value);
@@ -180,6 +211,7 @@ extern "C" __attribute__((visibility("default"))) int ScdaMain(const char* code)
     app::g_display_applied++;
     input::Init(g_window);
     input::LoadBindings();
+    AttachTouchControls();
     if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), (app::ExeDir() / "hdd").string())) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Splinter Cell: Double Agent",
                                  "The game failed to start, see the log in the logs folder.", g_window);

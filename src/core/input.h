@@ -24,6 +24,10 @@ int KeyboardPort();
 bool PadConnected(int slot);  // controller slot 0-3
 void Rumble(int port, uint16_t left, uint16_t right);
 void SetBlocked(bool blocked);  // the options panel takes the input
+// Android's touch controls, player 1's controller while shown: their state (XInput masks, sticks y up), and whether
+// to show them now, as their opacity percent, 0 hidden
+void SetTouch(uint32_t buttons, uint8_t left, uint8_t right, int16_t lx, int16_t ly, int16_t rx, int16_t ry);
+int TouchOpacity();
 
 // window thread
 void OnRawInput(void* handle);

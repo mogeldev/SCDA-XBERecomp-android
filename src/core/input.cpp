@@ -910,13 +910,50 @@ void ApplyDeadZone(XINPUT_GAMEPAD& g, float zone) {
     g.sThumbRY = MoveDeadZone(g.sThumbRY, zone);
 }
 
+// The touch controls (android TouchControls.java): player 1's controller while shown, merged into a real one there.
+// Buttons: XInput's masks, the left trigger in bits 16-23, the right in 24-31. Sticks: lx ly rx ry, 16 bits each.
+std::atomic<bool> g_touch_shown{false};
+std::atomic<uint32_t> g_touch_buttons{0};
+std::atomic<uint64_t> g_touch_sticks{0};
+
+// false when the touch controls are not this slot's
+bool AddTouch(int slot, XINPUT_GAMEPAD& g) {
+    if (!g_touch_shown || slot != app::Get().players[0].pad) return false;
+    uint32_t b = g_touch_buttons;
+    uint64_t sticks = g_touch_sticks;
+    g.wButtons |= WORD(b);
+    g.bLeftTrigger = std::max(g.bLeftTrigger, BYTE(b >> 16));
+    g.bRightTrigger = std::max(g.bRightTrigger, BYTE(b >> 24));
+    // a stick held on the screen wins over the controller's
+    auto axis = [&](SHORT& a, int shift) {
+        if (SHORT v = SHORT(sticks >> shift)) a = v;
+    };
+    axis(g.sThumbLX, 0);
+    axis(g.sThumbLY, 16);
+    axis(g.sThumbRX, 32);
+    axis(g.sThumbRY, 48);
+    return true;
+}
+
+// the settings' right stick inversion and dead zone
+bool Finish(XINPUT_GAMEPAD& g) {
+    const app::Settings& s = app::Get();
+    if (s.invert_pad_x) g.sThumbRX = SHORT(-1 - g.sThumbRX);
+    if (s.invert_pad_y) g.sThumbRY = SHORT(-1 - g.sThumbRY);
+    ApplyDeadZone(g, s.pad_dead_zone);
+    return true;
+}
+
 // false for an empty slot
 bool ReadPad(int slot, XINPUT_GAMEPAD& g) {
     std::lock_guard lock(g_pads_mutex);
     if (!g_sdl || slot < 0 || slot >= 4) return false;
     UpdatePads();
     SDL_Gamepad* pad = g_pads[slot];
-    if (!pad) return false;
+    if (!pad) {
+        g = {};
+        return AddTouch(slot, g) && Finish(g);
+    }
     constexpr std::pair<SDL_GamepadButton, WORD> kButtons[] = {
         {SDL_GAMEPAD_BUTTON_DPAD_UP, XINPUT_GAMEPAD_DPAD_UP},
         {SDL_GAMEPAD_BUTTON_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_DOWN},
@@ -963,13 +1000,10 @@ bool ReadPad(int slot, XINPUT_GAMEPAD& g) {
     // not plain negation: -32768 has no positive
     g.sThumbLX = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
     g.sThumbLY = SHORT(-1 - SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY));
-    SHORT rx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX);
-    SHORT ry = SHORT(-1 - SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY));
-    const app::Settings& s = app::Get();
-    g.sThumbRX = s.invert_pad_x ? SHORT(-1 - rx) : rx;
-    g.sThumbRY = s.invert_pad_y ? SHORT(-1 - ry) : ry;
-    ApplyDeadZone(g, s.pad_dead_zone);
-    return true;
+    g.sThumbRX = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX);
+    g.sThumbRY = SHORT(-1 - SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY));
+    AddTouch(slot, g);
+    return Finish(g);
 }
 
 // the physical buttons held, in Pad order
@@ -1082,6 +1116,26 @@ void SetBlocked(bool b) {
 }
 
 void StartControllers() { StartPads(); }
+
+void SetTouch(uint32_t buttons, uint8_t left, uint8_t right, int16_t lx, int16_t ly, int16_t rx, int16_t ry) {
+    g_touch_buttons = (buttons & 0xFFFF) | uint32_t(left) << 16 | uint32_t(right) << 24;
+    g_touch_sticks = uint64_t(uint16_t(lx)) | uint64_t(uint16_t(ly)) << 16 | uint64_t(uint16_t(rx)) << 32 |
+                     uint64_t(uint16_t(ry)) << 48;
+}
+
+int TouchOpacity() {
+    const app::Settings& s = app::Get();
+    bool controller = false;
+    {
+        // the game's reads keep the list current
+        std::lock_guard lock(g_pads_mutex);
+        for (SDL_Gamepad* pad : g_pads) controller |= pad != nullptr;
+    }
+    bool shown = s.touch_controls == app::kTouchOn || (s.touch_controls == app::kTouchAuto && !controller);
+    if (!shown) SetTouch(0, 0, 0, 0, 0, 0, 0);
+    g_touch_shown = shown;
+    return shown ? int(std::clamp(s.touch_opacity, 10u, 100u)) : 0;
+}
 
 uint16_t HeldOnAnyController() {
     uint16_t held = 0;
