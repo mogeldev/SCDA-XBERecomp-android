@@ -7,7 +7,7 @@ Unofficial **original Xbox → Android ARM64** port using static recompilation, 
 ## Requirements
 
 - Android 11+, ARM64, Vulkan 1.1 and an SDL-compatible controller.
-- **Game version:** unmodified **North American (USA) retail release for the original Xbox**. Its `default.xbe` SHA-1 must be `91290baf93c2f6ae735a3106c48734665c826d84`; other regional/revision builds, the PC version and Xbox 360 version are unsupported. Provide `default.xbe`, `Default/` and `Media/` from that game.
+- **Supported game build:** Redump-verified original Xbox release **Tom Clancy's Splinter Cell - Double Agent (USA, Europe) (En,Fr,De,Es,It)**. Redump ISO checksums: CRC-32 `DF53C218`, MD5 `06161188422B4D2EAB54D30F3158E0AA`, SHA-1 `83D68B38A8514B6D2580EA0F57487CD575EDD4B7`. A compatible XISO made from this disc is also supported. The extracted `default.xbe` must have SHA-1 `91290baf93c2f6ae735a3106c48734665c826d84`; provide it with `Default/` and `Media/`. Other builds, the PC version and Xbox 360 version are unsupported.
 - Roughly **3.5 GB for assets**, plus input/extraction space and at least **512 MiB for compilation**.
 
 ## Setup
