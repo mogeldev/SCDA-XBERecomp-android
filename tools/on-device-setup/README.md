@@ -62,9 +62,13 @@ Emulator-only import testing is in [`../on-device-import-test/README.md`](../on-
 
 ## Current ISO/archive validation
 
-The emulator import app passed the full retail ISO, both private 7z samples and a direct XISO from the supplied format folder. All 1,317 campaign file hashes matched the private reference for retail ISO and both 7z samples. The expanded synthetic/private-XBE matrix passed 30 cases (25 distinct plus five repeats), including path/link rejection, malformed/truncated ISO, unsupported XBE, encryption rejection and cancellation. Stored/compressed RAR5 reader checks matched 7-Zip. The latest ARM64 setup APK builds and contains both tools/licenses, but its final installation was blocked by `INSTALL_FAILED_USER_RESTRICTED`; ISO/archive phone execution remains unvalidated. See emulator README for exact scope.
+The emulator import app passed the full retail ISO, both private 7z samples and a direct XISO from the supplied format folder. All 1,317 campaign file hashes matched the private reference for retail ISO and both 7z samples. The expanded synthetic/private-XBE matrix passed 30 cases (25 distinct plus five repeats), including path/link rejection, malformed/truncated ISO, unsupported XBE, encryption rejection and cancellation. Stored/compressed RAR5 reader checks matched 7-Zip. The latest ARM64 setup APK contains both tools/licenses. After the initial `INSTALL_FAILED_USER_RESTRICTED` rejection, the authorized retry installed successfully and the **direct-XISO phone test passed** on the Redmi Note 13 Pro 5G / API 36. See emulator README for archive-specific scope.
 
-Final phone retry, after the user approves installation (check the current serial):
+Phone result: hash-verified 4,055,040,000-byte XISO input → installed extract-xiso subprocess (`XISO_EXTRACT_PASS`) → supported-XBE validation → fresh translation → all 129 compiled objects → link → full runtime/dispatch validation → atomic publication → automatic SDL title-screen launch. All 134 translator outputs matched Windows SHA-256 references. Both compiled and internal-loaded libraries matched the earlier gameplay-tested output, SHA-256 `ba49078da1069f0bebd04ec4e5dac6b973ebd54d6f7f67a50911a7c1e23fb4e4`. Runtime logs confirmed 33,172 mappings, four continuations, 290 host overrides, zero missing kernel imports, Vulkan rendering and SDL stereo initialization. The private debug input was deleted before compilation and no compiler children remained after completion.
+
+The run initially selected six adaptive workers. From `Resume: 0/129` to `BUILD_PASS` took **381,659 ms (6 min 22 s)**, including link/check/publication but excluding input transfer, copying, extraction and translation. No overall peak-memory or clean total-setup-time benchmark is claimed. Phone campaign-file hashes were not compared (OEM shell/run-as external-storage access restriction); full campaign-file comparison passed separately in the emulator. Gameplay beyond the title screen, phone archive inputs and manual file/folder pickers are not yet retested. Only the isolated setup app was installed; no phone settings were changed.
+
+Repeat on a fresh isolated setup installation, with user approval (check the current serial):
 
 ```text
 python tools/on-device-setup/run.py --sdk SDK --serial SERIAL --allow-phone --source PRIVATE_XISO_OR_ARCHIVE
@@ -74,7 +78,7 @@ This retains the original runner's per-chunk/full-file verification and existing
 
 ## Session handoff
 
-The user uninstalled all test builds from the phone after validation. Do not reinstall or touch the normal game without a new request. The test apps' private device caches/saves are no longer available.
+The user uninstalled all test builds from the phone after validation. Do not reinstall or touch the normal game without a new request. Those earlier test apps' private device caches/saves were removed. The ISO/XISO phone validation subsequently reinstalled only SCDA Local Setup Test, which now holds its own imported assets/compiler cache; do not delete or replace it without permission.
 
 Local temporary transfer ZIP/tar files, duplicate probe inputs and diagnostic screenshots/raw hang captures were removed during cleanup. Source game assets, release packages, pinned compiler downloads, build caches, concise validation logs and the validated phone-built library remain under their existing paths (private outputs stay ignored under `out/`). The test emulator and Gradle daemons were stopped at that checkpoint. ISO/archive work subsequently restored missing PC SDK components and created a disposable 40-GiB `scda_import_x64` emulator for testing. Private fixtures and full-sample validation logs are ignored under `out/on-device-import/`.
 
