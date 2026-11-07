@@ -19,6 +19,12 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn("dependsOn(stageOnDeviceTools)", gradle)
         self.assertIn('../out/android-tools/jniLibs', gradle)
 
+    def test_debug_only_signing_for_both_variants(self):
+        gradle = (ROOT / 'android/build.gradle').read_text()
+        self.assertIn('debug { signingConfig = signingConfigs.debug }', gradle)
+        self.assertIn('release { signingConfig = signingConfigs.debug }', gradle)
+        self.assertEqual(gradle.count('signingConfig ='), 2)
+
     def test_debug_import_hook_not_in_production(self):
         for path in JAVA.glob('*.java'):
             self.assertNotIn('test_import', path.read_text(), str(path))
