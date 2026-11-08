@@ -1,9 +1,9 @@
 # Bundled on-device tools
 
-Production ARM64 builds include the compiler and import tools used during first-time setup. No game executable, media, generated game sources/objects or compiled game library is included. Native tools run as the app UID; they are not a sandbox for hostile inputs.
+Production builds include ARM64 and x86_64 compiler and import tools used during first-time setup. No game executable, media, generated game sources/objects or compiled game library is included. Native tools run as the app UID; they are not a sandbox for hostile inputs.
 
-- LLVM/Clang/LLD 21.1.8: Apache-2.0 with LLVM exceptions; pinned Termux packages and SHA-256 values are in `tools/on-device-probe/packages-arm64-v8a.json`.
-- NDK LLVM libunwind: Apache-2.0 with LLVM exceptions; the ARM64 static archive is bundled for linking player-built game libraries on Android 10. The packaged LLVM notices cover it.
+- LLVM/Clang/LLD 21.1.8: Apache-2.0 with LLVM exceptions; pinned Termux packages and SHA-256 values are in `tools/on-device-probe/packages-arm64-v8a.json` (ARM64) and `tools/on-device-probe/packages.json` (x86_64), same versions.
+- NDK LLVM libunwind: Apache-2.0 with LLVM exceptions; the ARM64 and x86_64 static archives are bundled for linking player-built game libraries on Android 10. The packaged LLVM notices cover it.
 - Termux libc++ runtime: renamed `libc++_compil.so` to avoid colliding with the game's NDK `libc++_shared.so`.
 - libffi, libxml2, zlib, zstd: their upstream notices are extracted from the pinned packages into `assets/licenses/`.
 - GNU libiconv: LGPL; this is a separately linked shared library, not incorporated into project source. Preserve the bundled copyright/license texts. Corresponding source and Termux packaging/patches for the shipped version are provided with the testing release. Upstream: https://www.gnu.org/software/libiconv/ ; package recipe: https://github.com/termux/termux-packages/tree/master/packages/libiconv .

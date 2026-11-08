@@ -2,6 +2,14 @@
 
 Current release: 0.2.0-testing.2 (adds the manual Share device report; see `android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
 
+## Unreleased: on-device compilation on x86_64
+
+- The APK now bundles pinned LLVM/Clang/LLD 21.1.8 compiler and import tools for x86_64 as well as ARM64 (`tools/on-device-probe/packages.json`, same package versions as ARM64). APK size grew from about 137 MB to about 219 MB for all users.
+- Setup compiles for the process ABI only: x86_64 uses triple `x86_64-linux-android29` with the NDK driver's default target features (`x86-64`, `+sse4.2`, `+popcnt`, `+cx16`), validates x86_64 ELF output and links against its own `compiler/x86_64/libunwind.a`. ARM64 flags are unchanged.
+- Android 15 x86_64 emulator, separate test app (normal app data untouched): import, translation, 129/129 objects, link, loader/dispatch check and publication passed in about 5 minutes. With full campaign assets the on-device library reached the title screen at about 60 FPS.
+- The on-device x86_64 library is not byte-identical to the Windows builder output (different clang 21 distributions). Extra NDK `-cc1` defaults were tried and did not produce identical objects; the validated target-feature set was kept.
+- Not tested: gameplay beyond the title screen, full-size import plus compile on x86_64, physical x86_64 hardware, and an ARM64 phone rebuild after this change.
+
 ## 0.2.0-testing.1 validation
 
 - Adreno 710 phone: user confirmed Turnip start/gameplay, no apparent visual issues, chip detection and switching back. Logs verified chip `0x07010000` and Mesa Turnip, not fallback.
@@ -28,7 +36,7 @@ Current release: 0.2.0-testing.2 (adds the manual Share device report; see `andr
 
 - Release APKs include `arm64-v8a` and `x86_64` runtimes; no embedded game code.
 - The Windows builder translates once, compiles both ABIs with separate incremental objects, and writes `lib/arm64-v8a/libscda_code.so` and `lib/x86_64/libscda_code.so` into one private game ZIP. Its executable is now `SCDA-Android-Builder.exe`.
-- Import validates ABI headers and version, selects the app process's ABI, and publishes the existing `game/libscda_code.so` layout. Legacy single-library ZIPs remain supported. ARM64 archive/folder normalization also handles the new layout; x86_64 uses prebuilt ZIPs, not on-device compilation.
+- Import validates ABI headers and version, selects the app process's ABI, and publishes the existing `game/libscda_code.so` layout. Legacy single-library ZIPs remain supported. ARM64 archive/folder normalization also handles the new layout; at testing.6, x86_64 used prebuilt ZIPs (on-device compilation for x86_64 was added later, see above).
 - The exact testing.6 APK passed normal file-picker import of the new builder ZIP on the x86_64 Android 15 emulator; the x86_64 builder library reached intro/title with private campaign assets. Physical ARM64 update/gameplay on this version is not yet rechecked.
 
 ## Phases

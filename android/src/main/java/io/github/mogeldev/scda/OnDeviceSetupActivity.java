@@ -20,8 +20,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class OnDeviceSetupActivity extends SetupActivity {
+    // Setup and runtime run in the primary ABI; compile for exactly that ABI with its packaged tools.
+    private static final boolean ARM64 = Build.SUPPORTED_ABIS[0].equals("arm64-v8a");
+    private static final String ABI = ARM64 ? "arm64-v8a" : "x86_64";
+    private static final int MACHINE = ARM64 ? 183 : 62;
+
     @Override protected boolean supportsLocalCompilation() {
-        return Build.SUPPORTED_ABIS[0].equals("arm64-v8a")
+        return (ARM64 || Build.SUPPORTED_ABIS[0].equals("x86_64"))
             && new File(getApplicationInfo().nativeLibraryDir, "libprobe_clang.so").isFile();
     }
 
@@ -131,7 +136,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
         try (java.io.DataInputStream input = new java.io.DataInputStream(Files.newInputStream(path))) { input.readFully(bytes); }
         if (bytes[0] != 0x7f || bytes[1] != 'E' || bytes[2] != 'L' || bytes[3] != 'F'
                 || bytes[4] != 2 || bytes[5] != 1 || (bytes[16] & 255) != type || bytes[17] != 0
-                || (bytes[18] & 255) != 183 || bytes[19] != 0) throw new IOException("Invalid ARM64 ELF: " + path);
+                || (bytes[18] & 255) != MACHINE || bytes[19] != 0) throw new IOException("Invalid " + ABI + " ELF: " + path);
     }
 
     private void compile(Path work, String source) throws IOException {
@@ -139,18 +144,26 @@ public class OnDeviceSetupActivity extends SetupActivity {
         if (CompileCache.valid(output)) { elf(output, 1); return; }
         Files.deleteIfExists(output.resolveSibling(output.getFileName() + ".sha256"));
         Path temporary = output.resolveSibling(output.getFileName() + ".tmp");
-        command(work, "clang", "-cc1", "-triple", "aarch64-linux-android29", "-emit-obj", "-std=c++20", "-O2",
+        // Target features match the NDK driver defaults used by the Windows builder for each ABI.
+        String[] target = ARM64
+            ? new String[]{"-triple", "aarch64-linux-android29", "-target-feature", "+neon", "-target-feature", "-outline-atomics"}
+            : new String[]{"-triple", "x86_64-linux-android29", "-target-cpu", "x86-64", "-target-feature", "+sse4.2",
+                "-target-feature", "+popcnt", "-target-feature", "+cx16", "-tune-cpu", "generic"};
+        List<String> args = new ArrayList<>(Arrays.asList("-cc1"));
+        args.addAll(Arrays.asList(target));
+        args.addAll(Arrays.asList("-emit-obj", "-std=c++20", "-O2",
             "-mrelocation-model", "pic", "-pic-level", "2", "-funwind-tables=2", "-relaxed-aliasing",
-            "-fcxx-exceptions", "-fexceptions", "-stack-protector", "2", "-target-feature", "+neon",
-            "-target-feature", "-outline-atomics", "-DX86_GAME_CODE", "-nostdsysteminc", "-nobuiltininc", "-w",
-            "-Igenerated", "-Iinput", "-Iinput/cpu/freestanding", "-o", temporary.toString(), "generated/" + source);
+            "-fcxx-exceptions", "-fexceptions", "-stack-protector", "2",
+            "-DX86_GAME_CODE", "-nostdsysteminc", "-nobuiltininc", "-w",
+            "-Igenerated", "-Iinput", "-Iinput/cpu/freestanding", "-o", temporary.toString(), "generated/" + source));
+        command(work, "clang", args.toArray(new String[0]));
         elf(temporary, 1);
         Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         CompileCache.seal(output);
     }
 
     @Override protected void compileGame(File external, GameImport.Progress progress) throws IOException {
-        if (!Build.SUPPORTED_ABIS[0].equals("arm64-v8a")) throw new IOException("Local compilation currently requires ARM64");
+        if (!supportsLocalCompilation()) throw new IOException("Local compilation is unavailable on this device");
         CompileCache.interrupted();
         Path game = external.toPath().resolve("game");
         Path xbe = game.resolve("assets/default.xbe");
@@ -192,7 +205,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
                     throw new IOException("Free at least 512 MiB for compilation and 64 MiB for the library");
                 progress.update("Preparing compiler inputs…", -1);
                 copyAssets("compiler/input", work.resolve("input"));
-                copyAssets("compiler/libunwind.a", work.resolve("libunwind.a"));
+                copyAssets("compiler/" + ABI + "/libunwind.a", work.resolve("libunwind.a"));
                 Files.copy(xbe, work.resolve("input/default.xbe"), StandardCopyOption.REPLACE_EXISTING);
                 Path generated = work.resolve("generated");
                 Path translated = work.resolve("translated");

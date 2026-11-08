@@ -139,7 +139,7 @@ public class SetupActivity extends Activity {
                 + "Import ISO/XISO, ZIP, 7z, RAR or TAR, or an extracted folder with default.xbe, Default/ and Media/. "
                 + "Archives may contain one ISO or one game folder. Encrypted/split archives and CHD/CSO/CCI are unsupported.\n\n"
                 + "Allow about 3.5 GB for campaign files, plus the input copy, temporary extraction and at least 512 MiB for compilation. "
-                + "Compilation took 6–8 minutes on the tested phone, excluding import. Keep setup open; Back cancels.\n\n"
+                + "Compilation took 6–8 minutes on the tested ARM64 phone, excluding import; other devices may differ. Keep setup open; Back cancels.\n\n"
                 + "Matching prebuilt-library ZIPs also work. Saves and settings are not changed. Controller recommended; touch controls are available."
             : "Use a ZIP from the matching Windows builder. ZIP root: lib/arm64-v8a/libscda_code.so, lib/x86_64/libscda_code.so and assets/. "
                 + "Inside assets/: default.xbe, Default/ and Media/.\n\n"
@@ -150,7 +150,7 @@ public class SetupActivity extends Activity {
             "Your own supported original Xbox copy is required. Not PC or Xbox 360. The importer checks the executable hash. No game content is included.",
             message,
             "Allow about 3.5 GB for campaign files, plus the input copy and temporary extraction. Local compilation requires at least 512 MiB free. A working installation does not need reimporting after a normal app update.",
-            "Android 10 or newer (Android 10 experimental). Vulkan 1.1. ARM64 supports local compilation; x86_64 requires the matching Windows builder ZIP. Compatibility depends on the GPU and driver.",
+            "Android 10 or newer (Android 10 experimental). Vulkan 1.1. ARM64 and x86_64 support local compilation; a ZIP from the matching Windows builder also works. Compatibility depends on the GPU and driver.",
             "Controller recommended; touch controls are available. Optional phone gyro aiming is configured in the in-game controller settings.",
             "Install updates over the existing app with the same signing certificate. Do not uninstall or clear app data: saves and settings would be deleted."
         };

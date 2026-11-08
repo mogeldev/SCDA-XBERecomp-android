@@ -2,7 +2,7 @@
 
 **Developer experiment, not a distributable release.** New app ID `io.github.mogeldev.scda.localsetup`, label **SCDA Local Setup Test**. Does not update/clear the normal game or the earlier gameplay/probe apps.
 
-The validated compiler/import implementation now lives in `android/src/main/java/` and the production ARM64 launcher enables it too. This separate app remains a safe validation harness: `LocalSetupActivity` adds only the private debug-import entry, while production uses `OnDeviceSetupActivity` without that entry. Both accept existing prebuilt ZIPs; legacy installs still skip setup. The Windows builder is unchanged. Production Gradle builds its own matching runtime and stages tools into `out/android-tools/`, independently of this harness's supplied host APK.
+The validated compiler/import implementation now lives in `android/src/main/java/` and the production launcher enables it on ARM64 and x86_64. This separate app remains a safe validation harness: `LocalSetupActivity` adds only the private debug-import entry, while production uses `OnDeviceSetupActivity` without that entry. Both accept existing prebuilt ZIPs; legacy installs still skip setup. The Windows builder is unchanged. Production Gradle builds its own matching runtime and stages tools into `out/android-tools/`, independently of this harness's supplied host APK.
 
 ## Workflow
 
@@ -23,7 +23,7 @@ python tools/on-device-setup/build.py --sdk "C:\path\to\Android\Sdk" --host-apk 
 
 Uses pinned probe compiler packages and the real unchanged translator; configs and freestanding CPU headers are APK assets. **No XBE, generated sources, objects, game library or Windows reference hashes are packaged.** The compiler's C++ runtime SONAME is relocated to `libc++_compil.so`, distinct from the matching game's `libc++_shared.so`; relocation changes only ELF dynamic strings. Host, SDL and launcher come from the trusted matching APK. The compiler version fingerprints all staged binaries/inputs and compilation implementation/policy.
 
-APK: `out/on-device-setup/build/outputs/apk/debug/scda-on-device-setup-debug.apk` (about 80 MiB).
+APK: `out/on-device-setup/build/outputs/apk/debug/scda-on-device-setup-debug.apk` (about 80 MiB). `--abi x86_64` builds the harness for the x86_64 emulator; `--host-apk` must then contain x86_64 runtime libraries. `run.py` accepts ARM64 or x86_64 devices.
 
 ## Device test
 
@@ -62,7 +62,7 @@ Emulator-only import testing is in [`../on-device-import-test/README.md`](../on-
 
 ## Production integration validation
 
-The compiler/cache/source-import classes were moved into `android/src/main/java/` (not forked). Production uses `OnDeviceSetupActivity`; the isolated `LocalSetupActivity` now adds only its private ADB hook. ARM64 compiler capability is gated on installed tools; x86-64/no-tools builds fall back to the original prebuilt-ZIP importer. Existing ready/legacy install detection remains unchanged, and a manifest alias retains the old explicit launcher component. Production app ID stays `io.github.mogeldev.scda`; version is 0.2/code 2. The Windows builder is unchanged.
+The compiler/cache/source-import classes were moved into `android/src/main/java/` (not forked). Production uses `OnDeviceSetupActivity`; the isolated `LocalSetupActivity` now adds only its private ADB hook. Compiler capability is gated on installed tools for the process ABI (ARM64 or x86_64); no-tools builds fall back to the original prebuilt-ZIP importer. Existing ready/legacy install detection remains unchanged, and a manifest alias retains the old explicit launcher component. Production app ID stays `io.github.mogeldev.scda`; version is 0.2/code 2. The Windows builder is unchanged.
 
 Validated locally: automatic Gradle tool staging and production ARM64 build; dual-ABI development build; production APK identity/launcher, separate compiler/game runtimes, tools/notices and absence of game content/private debug-import hook; isolated setup build; 23 Python checks, 172 Java checks and rerun of all 30 emulator importer cases against the relocated shared classes. The emulator framework/package service disappeared during the first rerun; restarting the disposable emulator allowed the whole matrix to pass. No phone system changes or production-package installation occurred.
 

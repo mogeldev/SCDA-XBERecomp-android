@@ -27,7 +27,8 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn('ANDROID 10 — EXPERIMENTAL', (JAVA / 'SetupView.java').read_text(encoding='utf-8'))
         local = (JAVA / 'OnDeviceSetupActivity.java').read_text()
         self.assertIn('aarch64-linux-android29', local)
-        self.assertIn('copyAssets("compiler/libunwind.a"', local)
+        self.assertIn('x86_64-linux-android29', local)
+        self.assertIn('copyAssets("compiler/" + ABI + "/libunwind.a"', local)
         self.assertIn('"@objects.rsp", "libunwind.a"', local)
         for file in ('tools/on-device-setup/build.py', 'tools/on-device-setup/import_tools.py'):
             self.assertIn('-DANDROID_PLATFORM=android-29', (ROOT / file).read_text())
@@ -36,6 +37,19 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn('x86_64-linux-android29', builder)
         self.assertIn('@$out.rsp ../compiler/$abi/libunwind.a', builder)
         self.assertIn('compiler/$abi/libunwind.a', (ROOT / 'tools/android-builder/package.ps1').read_text())
+
+    def test_x86_64_local_compilation(self):
+        local = (JAVA / 'OnDeviceSetupActivity.java').read_text()
+        # Same x86_64 target features as the NDK driver the Windows builder uses (validated to title screen).
+        for flag in ('"-target-cpu", "x86-64"', '"+sse4.2"', '"+popcnt"', '"+cx16"'):
+            self.assertIn(flag, local)
+        self.assertIn('MACHINE = ARM64 ? 183 : 62', local)
+        self.assertNotIn('Local compilation currently requires ARM64', local)
+        build = (ROOT / 'tools/on-device-setup/build.py').read_text()
+        self.assertIn("ABIS = {'arm64-v8a': (183, 'aarch64'), 'x86_64': (62, 'x86_64')}", build)
+        self.assertIn("compiler / abi / 'libunwind.a'", build)
+        self.assertNotIn("'-Pabi=arm64-v8a'", build)
+        self.assertTrue((ROOT / 'tools/on-device-probe/packages.json').is_file())
 
     def test_release_abis_and_universal_builder(self):
         gradle = (ROOT / 'android/build.gradle').read_text()

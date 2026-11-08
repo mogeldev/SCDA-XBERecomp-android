@@ -1,6 +1,6 @@
 # SCDA Android builder
 
-A Windows WPF GUI builder package that creates the Android game's import ZIP from your own extracted Xbox game. It runs on **Windows 10/11 x64** and produces **Android ARM64 + x86_64** code in one game ZIP—not a PC game or Windows ARM64 executable. The app automatically selects the library matching its process ABI.
+A Windows WPF GUI builder package that creates the Android game's import ZIP from your own extracted Xbox game. It runs on **Windows 10/11 x64** and produces **Android ARM64 + x86_64** code in one game ZIP—not a PC game or Windows ARM64 executable. The app automatically selects the library matching its process ABI. Newer app versions can also compile on the device (ARM64 and x86_64); the builder remains an alternative.
 
 ## Players
 

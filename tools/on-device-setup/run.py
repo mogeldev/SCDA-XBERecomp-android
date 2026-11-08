@@ -62,7 +62,7 @@ def main():
     def prop(name):
         return device('shell', 'getprop', name, capture_output=True, text=True).stdout.strip()
 
-    if prop('ro.product.cpu.abi') != 'arm64-v8a': parser.error('ARM64 required')
+    if prop('ro.product.cpu.abi') not in ('arm64-v8a', 'x86_64'): parser.error('ARM64 or x86_64 required')
     if prop('ro.kernel.qemu') != '1' and not args.allow_phone: parser.error('Pass --allow-phone for the separate setup test app')
     archive_path = args.source
     if archive_path is None:

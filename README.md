@@ -14,8 +14,11 @@ Unofficial **original Xbox → Android ARM64 / x86_64** port using static recomp
 
 ## Setup
 
+On-device compilation runs on ARM64 and, since the current development build, x86_64 (unreleased; emulator-tested to the title screen). The published 0.2.0-testing.2 compiles on ARM64 only.
+
+
 1. Install the APK (includes ARM64 and x86_64) and open SCDA.
-2. **ARM64:** import your supported game and keep setup open for on-device compilation. **x86_64:** import a game ZIP from the matching Windows builder (one ZIP supports both architectures).
+2. Import your supported game and keep setup open for on-device compilation (ARM64 and x86_64). Alternatively import a game ZIP from the matching Windows builder (one ZIP supports both architectures).
 3. Play with touch controls or a controller. Start at **50% render resolution**.
 
 [Full setup/import/update guide](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Setup) · [Controls and touch settings](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Controls) · [Troubleshooting](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Troubleshooting)
