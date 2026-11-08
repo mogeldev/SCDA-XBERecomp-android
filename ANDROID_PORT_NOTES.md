@@ -1,14 +1,15 @@
 # SCDA Android port: notes
 
-Current release: 0.2.0-testing.2 (adds the manual Share device report; see `android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.2.0-testing.3 (adds on-device compilation on x86_64). 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
 
-## Unreleased: on-device compilation on x86_64
+## 0.2.0-testing.3: on-device compilation on x86_64
 
 - The APK now bundles pinned LLVM/Clang/LLD 21.1.8 compiler and import tools for x86_64 as well as ARM64 (`tools/on-device-probe/packages.json`, same package versions as ARM64). APK size grew from about 137 MB to about 219 MB for all users.
 - Setup compiles for the process ABI only: x86_64 uses triple `x86_64-linux-android29` with the NDK driver's default target features (`x86-64`, `+sse4.2`, `+popcnt`, `+cx16`), validates x86_64 ELF output and links against its own `compiler/x86_64/libunwind.a`. ARM64 flags are unchanged.
 - Android 15 x86_64 emulator, separate test app (normal app data untouched): import, translation, 129/129 objects, link, loader/dispatch check and publication passed in about 5 minutes. With full campaign assets the on-device library reached the title screen at about 60 FPS.
 - The on-device x86_64 library is not byte-identical to the Windows builder output (different clang 21 distributions). Extra NDK `-cc1` defaults were tried and did not produce identical objects; the validated target-feature set was kept.
-- Not tested: gameplay beyond the title screen, full-size import plus compile on x86_64, physical x86_64 hardware, and an ARM64 phone rebuild after this change.
+- User-confirmed afterwards with the pre-bump test build of the same source: full ISO import through the file picker, compile and in-game on the Android 15 x86_64 emulator (6 cores, 12 GB), and full compile plus in-game on the ARM64 phone.
+- Not tested: physical x86_64 hardware, extended x86_64 campaign play, and low-storage stress.
 
 ## 0.2.0-testing.1 validation
 

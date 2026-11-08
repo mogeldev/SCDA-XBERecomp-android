@@ -10,8 +10,8 @@ android {
         applicationId = 'io.github.mogeldev.scda'
         minSdk = 29 // Android 10 support is experimental.
         targetSdk = 36
-        versionCode = 11
-        versionName = '0.2.0-testing.2'
+        versionCode = 12
+        versionName = '0.2.0-testing.3'
         // Installed native tools execute from nativeLibraryDir, never writable app storage.
         // x86_64 for the emulator; -Pabi=x86_64 builds one
         ndk { abiFilters(*(project.findProperty('abi')?.split(',') ?: ['arm64-v8a', 'x86_64'])) }
