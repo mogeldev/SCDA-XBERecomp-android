@@ -1,0 +1,31 @@
+Experimental Turnip integration — SCDA Android 0.2.0-testing.1
+
+Bundled unchanged: Vauzi-17/710 universal v4.5, libvulkan_freedreno.so (ARM64).
+Not the SW or WIN variant. No extra TU_DEBUG settings are forced by SCDA.
+Download: https://github.com/Vauzi-17/710/releases/download/4.5/Turnip-710-720-722-v4.5.zip
+ZIP SHA-256: b8a9884a5e3726f021f05b1e75f75ab206b37a98aefdebf922583f13e8957360
+Library SHA-256: cdb5e3355ac79eacc3a035d398e52847e383f261d3f3321064dc9503146ee69c
+
+Upstream release identifies Mesa 27.0.0-devel at:
+https://gitlab.freedesktop.org/mesa/mesa/-/tree/02f13375231bf0a9ed20b09cb21171351053be52
+Build recipe and patches at tag 4.5 (commit dd75952b6d3df5c31d9bef3adbda0577697a16b2):
+https://github.com/Vauzi-17/710/tree/dd75952b6d3df5c31d9bef3adbda0577697a16b2
+The release lists 01-u_gralloc-always-use-ubwc-detection.patch for the universal variant.
+Mesa has per-file licenses/copyrights, primarily MIT (see Mesa-license-info.txt).
+The Vauzi build repository carries GPL-3.0; its license is included separately.
+Exact binary/source correspondence has not been independently reproduced.
+The release corresponding-source ZIP includes the full Mesa source archive at that revision,
+the Vauzi build/patch repository at tag 4.5, and full pinned loader-component sources.
+Mesa-source-notices.txt preserves upstream source-header notices; all Mesa license texts are packaged.
+The source bundle records hashes, reconstruction instructions and the binary-reproduction limitation.
+ELF NEEDED inspection: libhardware, liblog, libnativewindow, libsync, libm, libz, libdl and libc
+are Android system dependencies; no external private library is distributed with the driver.
+
+Loader components built from source:
+libadrenotools (BSD-2-Clause): 8fae8ce254dfc1344527e05301e43f37dea2df80
+https://github.com/bylaws/libadrenotools
+liblinkernsbypass (BSD-2-Clause): aa3975893d83ef1bc84c321ec60c65fbf1287887
+https://github.com/bylaws/liblinkernsbypass
+volk (MIT): vulkan-sdk-1.4.304.0, 0b17a763ba5643e32da1b2152f8140461b3b7345
+https://github.com/zeux/volk
+Their complete license texts accompany this notice.

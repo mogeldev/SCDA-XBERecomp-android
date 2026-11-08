@@ -3,9 +3,10 @@
 // HLSL goes through glslang to SPIR-V. Render targets stay in the GENERAL layout and a pass ends with one memory
 // barrier: fewer layout transitions to get wrong, for a 640x480 title's few targets.
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 #include <sys/system_properties.h>
-#include <vulkan/vulkan.h>
+#include <volk.h>
+#include <android/native_window.h>
+#include "android/vulkan_driver.h"
 
 #include <dxgiformat.h>
 #include <glslang/Public/ResourceLimits.h>
@@ -989,8 +990,8 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
 }
 
 bool VulkanBackend::CreateInstance() {
-    Uint32 n = 0;
-    const char* const* ext = SDL_Vulkan_GetInstanceExtensions(&n);
+    if (!android_driver::Initialize()) return false;
+    const char* ext[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "SCDA";
     // 1.3 where the loader has it: a device's 1.3 calls only come with an instance that asks for them
@@ -1000,15 +1001,19 @@ bool VulkanBackend::CreateInstance() {
     app.apiVersion = instance_version_;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
-    ci.enabledExtensionCount = n;
+    ci.enabledExtensionCount = 2;
     ci.ppEnabledExtensionNames = ext;
     VK_TRY(vkCreateInstance(&ci, nullptr, &instance_));
+    volkLoadInstance(instance_);
     return true;
 }
 
 bool VulkanBackend::CreateSurface() {
-    if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
-        LOGW("vulkan: no surface: %s", SDL_GetError());
+    VkAndroidSurfaceCreateInfoKHR ci{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    ci.window = static_cast<ANativeWindow*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window_),
+        SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
+    if (!ci.window || vkCreateAndroidSurfaceKHR(instance_, &ci, nullptr, &surface_) != VK_SUCCESS) {
+        LOGW("vulkan: cannot create Android surface");
         surface_ = VK_NULL_HANDLE;
         return false;
     }
@@ -1041,6 +1046,17 @@ bool VulkanBackend::CreateDevice() {
         return false;
     }
     vkGetPhysicalDeviceProperties(gpu_, &props_);
+    if (android_driver::IsTurnip()) {
+        VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+        VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        properties.pNext = &driver;
+        vkGetPhysicalDeviceProperties2(gpu_, &properties);
+        if (driver.driverID != VK_DRIVER_ID_MESA_TURNIP) {
+            LOGE("vulkan: custom loader did not select Turnip; select Manufacturer in the launcher and restart");
+            return false;
+        }
+        LOGI("vulkan: verified Turnip driver: %s (%s)", driver.driverName, driver.driverInfo);
+    }
     screen_linear_workaround_ = NeedsScreenLinearWorkaround(props_.vendorID, props_.deviceName, props_.driverVersion);
     if (screen_linear_workaround_) LOGI("vulkan: experimental Mali-G51 r18p0 screen-linear interpolation workaround");
     vkGetPhysicalDeviceMemoryProperties(gpu_, &mem_props_);
@@ -1089,6 +1105,7 @@ bool VulkanBackend::CreateDevice() {
     ci.enabledExtensionCount = uint32_t(want.size());
     ci.ppEnabledExtensionNames = want.data();
     VK_TRY(vkCreateDevice(gpu_, &ci, nullptr, &dev_));
+    volkLoadDevice(dev_);
     vkGetDeviceQueue(dev_, family_, 0, &queue_);
     // D24S8 where it can be drawn to and sampled, else D32S8
     auto usable = [&](VkFormat f) {
@@ -1276,8 +1293,12 @@ bool VulkanBackend::CreateFrames() {
     return true;
 }
 
-std::filesystem::path PipelineCacheFile() { return app::ExeDir() / "shadercache" / "vulkan_pipelines.bin"; }
-std::filesystem::path SpirvDir() { return app::ExeDir() / "shadercache" / "vulkan"; }
+std::filesystem::path PipelineCacheFile() {
+    return app::ExeDir() / "shadercache" / (android_driver::IsTurnip() ? "turnip-v4.5_pipelines.bin" : "vulkan_pipelines.bin");
+}
+std::filesystem::path SpirvDir() {
+    return app::ExeDir() / "shadercache" / (android_driver::IsTurnip() ? "turnip-v4.5" : "vulkan");
+}
 
 void VulkanBackend::LoadPipelineCache() {
     std::vector<char> data;

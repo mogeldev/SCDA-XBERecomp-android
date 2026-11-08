@@ -1,30 +1,30 @@
 package io.github.mogeldev.scda;
 
-// UI-only emulator harness. No native libraries, game data or file-import actions.
+// UI-only emulator harness. No game data or importer. Explicit simulated progress, never production extras.
 public final class SetupPreviewActivity extends android.app.Activity {
+    private SetupView view;
     @Override public void onCreate(android.os.Bundle state) {
         super.onCreate(state);
-        final SetupView[] screen = new SetupView[1];
-        SetupView view = new SetupView(this, !getIntent().getBooleanExtra("prebuilt", false),
-            () -> new android.app.AlertDialog.Builder(this).setTitle("Requirements")
-                .setMessage("UI preview only. No game files are read.").setPositiveButton("Close", null).show(),
-            () -> new android.app.AlertDialog.Builder(this).setTitle("Tools & licenses")
-                .setMessage("UI preview only. The app displays its packaged notices here.").setPositiveButton("Close", null).show(),
+        view = new SetupView(this, !getIntent().getBooleanExtra("prebuilt", false),
+            () -> view.browse("Requirements", new String[]{"Game", "Storage", "Device"},
+                i -> new String[]{"UI preview only. No game files are read.", "Game files plus input and temporary extraction.",
+                    "Android 10+, Vulkan 1.1. ARM64 local compilation; x86_64 prebuilt ZIP."}[i], false),
+            () -> view.browse("Licenses", new String[]{"Example notice"}, i -> "UI preview only — sample notice, not a license audit.", true),
             () -> {
-                SetupView current = screen[0];
-                current.showWorkPage(true, "Cancelled. 54 verified objects retained.", false);
-                current.cancel.setOnClickListener(v -> {
-                    current.phase("02  COMPILE / RESUME");
-                    current.status.setText("Preview: compiling 54 / 129 sources");
-                    current.progress.setVisibility(android.view.View.VISIBLE);
-                    current.progress.setIndeterminate(false);
-                    current.progress.setProgress(42);
-                    current.percent.setText("42%");
-                    current.percent.setVisibility(android.view.View.VISIBLE);
-                    current.cancel.setText("Back / cancel");
-                });
+                view.showWorkPage(true, "Cancelled. 54 verified objects retained (simulation).", false);
+                view.cancel.setOnClickListener(v -> compile());
             });
-        screen[0] = view;
+        view.version("UI preview");
+        view.update.setOnClickListener(v -> view.message("Updates", "Simulated network error. Retry later.", null, null));
+        view.play.setOnClickListener(v -> view.message("Play", "Preview only: game not launched.", null, null));
+        view.select.setOnClickListener(v -> compile());
+        if (view.folder != null) view.folder.setOnClickListener(v -> {
+            view.showWorkPage(false, "Extracting files (simulation)…", true);
+            view.phase("01 IMPORT");
+        });
+        view.driver.setVisibility(android.view.View.VISIBLE);
+        view.driver.setOnClickListener(v -> view.driverPage(true, false,
+            choice -> view.message("Restart required", "Preview only: selection not saved.", null, null)));
         getWindow().setDecorFitsSystemWindows(false);
         view.setOnApplyWindowInsetsListener((v, insets) -> {
             android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
@@ -32,18 +32,21 @@ public final class SetupPreviewActivity extends android.app.Activity {
             v.setPadding(safe.left, safe.top, safe.right, safe.bottom);
             return insets;
         });
-        view.select.setOnClickListener(v -> {
-            view.phase("02  COMPILE / RESUME");
-            view.status.setText("Preview: compilation interrupted. 54 verified objects retained.");
-            view.select.setText("Compile / resume");
-            if (view.folder != null) view.folder.setVisibility(android.view.View.GONE);
-        });
-        if (view.folder != null) view.folder.setOnClickListener(v -> {
-            view.phase("01  IMPORT");
-            view.progress.setVisibility(android.view.View.VISIBLE);
-            view.status.setText("Preview: extracting game files…");
-        });
         setContentView(view);
         view.requestApplyInsets();
+        String page = getIntent().getStringExtra("page");
+        if ("ready".equals(page)) view.showReady();
+        else if ("compile".equals(page)) compile();
+        else if ("error".equals(page)) view.showWorkPage(false, "Simulated import error. Saves and settings unchanged.", false);
+    }
+    private void compile() {
+        view.showWorkPage(true, "Compiling 54 / 129 objects (simulation)", true);
+        view.phase("02 COMPILE");
+        view.workProgress("Compiling 54 / 129 objects (simulation)", 42);
+    }
+    @Override public void onBackPressed() {
+        if (view.back()) return;
+        if (view.isWorkPageVisible()) { view.cancel.performClick(); return; }
+        super.onBackPressed();
     }
 }

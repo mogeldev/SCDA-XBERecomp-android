@@ -18,6 +18,13 @@ def check(apk, sdk):
             data = archive.read('lib/x86_64/' + name)
             assert data[:6] == b'\x7fELF\x02\x01' and data[18:20] == b'\x3e\x00', name
         assert {n.split('/')[1] for n in names if n.startswith('lib/')} == {'arm64-v8a', 'x86_64'}
+        if 'lib/arm64-v8a/libvulkan_freedreno.so' in names:
+            import hashlib
+            assert hashlib.sha256(archive.read('lib/arm64-v8a/libvulkan_freedreno.so')).hexdigest() == 'cdb5e3355ac79eacc3a035d398e52847e383f261d3f3321064dc9503146ee69c'
+            for hook in ('libmain_hook.so', 'libhook_impl.so'):
+                assert 'lib/arm64-v8a/' + hook in names
+            assert not any(n.startswith('lib/x86_64/') and ('hook' in n or 'freedreno' in n) for n in names)
+            assert archive.read('assets/licenses/Turnip-provenance.txt')
         assert len(archive.read('assets/compiler/version')) == 64
         for license in ('LLVM.txt', 'LGPL-2.1-only.txt', 'GPL-3.0-only.txt', 'GPL-2.0-only.txt', 'NCSA.txt',
                         'TOOLCHAIN-NOTICES.md', 'extract-xiso.txt', 'libarchive.txt', 'Zydis.txt', 'Zycore.txt', 'tomlplusplus.txt'):

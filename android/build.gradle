@@ -10,8 +10,8 @@ android {
         applicationId = 'io.github.mogeldev.scda'
         minSdk = 29 // Android 10 support is experimental.
         targetSdk = 36
-        versionCode = 9
-        versionName = '0.1.0-testing.7'
+        versionCode = 10
+        versionName = '0.2.0-testing.1'
         // Installed native tools execute from nativeLibraryDir, never writable app storage.
         // x86_64 for the emulator; -Pabi=x86_64 builds one
         ndk { abiFilters(*(project.findProperty('abi')?.split(',') ?: ['arm64-v8a', 'x86_64'])) }
@@ -30,7 +30,7 @@ android {
     }
     sourceSets.main {
         assets.srcDirs = ['src/main/assets', '../out/android-tools/assets']
-        jniLibs.srcDirs = ['src/main/jniLibs', '../out/android-tools/jniLibs']
+        jniLibs.srcDirs = ['src/main/jniLibs', '../out/android-tools/jniLibs', '../out/turnip/jniLibs']
     }
     packaging.jniLibs {
         useLegacyPackaging = true
@@ -47,6 +47,10 @@ android {
 // No prebuilt host APK is used: compiler tools are staged separately from this build's runtime.
 def stageOnDeviceTools = tasks.register('stageOnDeviceTools') {
     doLast {
+        providers.exec {
+            workingDir rootDir.parentFile
+            commandLine 'python', 'tools/turnip/stage.py'
+        }.result.get().assertNormalExitValue()
         if (!project.hasProperty('toolsStaged')) {
             providers.exec {
                 workingDir rootDir.parentFile

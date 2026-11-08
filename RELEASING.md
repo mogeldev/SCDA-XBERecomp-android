@@ -81,4 +81,10 @@ Android `0.1.0-testing.6` / code 8, same debug certificate. The release APK incl
 
 Android `0.1.0-testing.7` / code 9, same debug certificate. Adds opt-in phone gyro aiming during weapon aim/sniping, PHONE as the Android default source, independent gyro X/Y inversion, calibration completion/timeout feedback and automatic menu refresh. Existing controller behavior and saved preferences are retained; old gyro inversion follows the previous stick settings until explicitly changed. Skip intro movies defaults to ON for new/reset settings. Phone gyro test-build behavior was user-confirmed on Adreno 710; broader sensor/device coverage remains open. Assets: dual-ABI APK, matching dual-ABI Windows builder, corresponding source and SHA-256 sums. Previous releases remain unchanged.
 
+## Published testing version: 0.2.0-testing.1
+
+Android `0.2.0-testing.1` / code 10, same debug certificate; prerelease, not Latest. Adds bundled universal Turnip v4.5 (opt-in), GPU-chip detection from the exact Mesa A6xx–A8xx table, launcher recovery selection, separated driver caches and unified Vulkan dispatch. Only Adreno 710 has physical validation. Adds the native landscape launcher redesign, split requirements view and complete packaged-license reader. The user confirmed fresh setup/import/compile/play on the phone using the preceding test APK; exact version-bumped APK validation is separately recorded in release notes.
+
+Corresponding source now also includes the full pinned Mesa, Vauzi recipe/patch, adrenotools, linkernsbypass and volk archives plus project source. See `tools/turnip/SOURCES.md`: upstream binary revision is checked, not independently reproduced byte-for-byte. Never reuse the old source-bundle script without these additions. Turnip and Android 10 remain experimental; previous tags/assets stay unchanged.
+
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

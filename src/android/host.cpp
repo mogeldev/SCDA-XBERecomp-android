@@ -226,7 +226,13 @@ extern "C" __attribute__((visibility("default"))) int ScdaMain(const char* code)
         LOGE("game code: %s has not the tables the host needs", code);
         return 1;
     }
-    g_window = SDL_CreateWindow("Splinter Cell: Double Agent", 0, 0, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_VULKAN);
+    // Own the Vulkan loader/surface; SDL supplies only the native window (no second system loader).
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Splinter Cell: Double Agent");
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, true);
+    g_window = SDL_CreateWindowWithProperties(props);
+    SDL_DestroyProperties(props);
     if (!g_window) {
         LOGE("window: %s", SDL_GetError());
         return 1;

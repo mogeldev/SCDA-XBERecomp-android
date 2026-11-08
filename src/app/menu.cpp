@@ -29,6 +29,9 @@
 #include <imgui.h>
 
 #include "app/app.h"
+#ifdef __ANDROID__
+#include "android/vulkan_driver.h"
+#endif
 #include "app/panel_colors.h"
 #include "app/translations.h"
 #include "audio/audio.h"
@@ -334,7 +337,7 @@ enum RowId {
     kSniperSensitivity, kFmvScale, kColourBlind, kAimHorizontal, kAimVertical, kInvertMouseX, kInvertPadX, kInvertPadY,
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
     kVibration, kGyroAiming, kGyroSource, kGyroSensitivity, kGyroAxis, kGyroInvertX, kGyroInvertY, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
-    kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow,
+    kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow, kVulkanDriver,
     kTouchControls, kTouchOpacity
 };
 
@@ -358,7 +361,7 @@ bool DesktopHides(int id) {
     (void)id;
     return false;
 #else
-    return id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow || id == kTouchControls ||
+    return id == kVulkanDriver || id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow || id == kTouchControls ||
            id == kTouchOpacity;
 #endif
 }
@@ -381,6 +384,9 @@ bool AndroidHides(int id) {
         case kSensitivity: case kSensitivityVertical: case kFreeLookSensitivity: case kWeaponSensitivity:
         case kSniperSensitivity: case kAimHorizontal: case kAimVertical: case kInvertMouse: case kInvertMouseX:
             return true;
+        // only GPUs in the bundled Turnip's list; kept while selected so it can be switched back
+        case kVulkanDriver:
+            return !android_driver::Supported() && !Get().turnip;
         default:
             return false;
     }
@@ -416,6 +422,7 @@ constexpr Row kSettingsRows[] = {
     {Kind::Value, kShadowDistance, "SHADOW DISTANCE"},
     {Kind::Value, kShadowFilter, "SHADOW FILTER"},
     {Kind::Heading, -1, "PERFORMANCE"},
+    {Kind::Value, kVulkanDriver, "VULKAN DRIVER"},
     {Kind::Value, kScaledPresentation, "SCREEN UPSCALING"},
     {Kind::Value, kNativeEffectSize, "GLOW RESOLUTION"},
     {Kind::Value, kFastGlow, "GLOW QUALITY"},
@@ -688,6 +695,13 @@ bool StepGraphicsRow(int id, int step, Settings& s, char (&text)[64]) {
             std::snprintf(text, sizeof(text), scale == 1 ? "%ux (DEFAULT)" : "%ux", scale);
             return true;
         }
+#ifdef __ANDROID__
+        case kVulkanDriver:
+            // unsupported: the only step is back to the manufacturer driver
+            if (step) s.turnip = android_driver::Supported() ? StepIndex(s.turnip, step, 2) != 0 : false;
+            std::snprintf(text, sizeof(text), "%s", s.turnip ? "TURNIP (EXPERIMENTAL, RESTART)" : "MANUFACTURER (RESTART)");
+            return true;
+#endif
         // PERFORMANCE: the values say what each choice costs or risks
         case kScaledPresentation:
             if (step) s.scaled_presentation = !StepIndex(!s.scaled_presentation, step, 2);

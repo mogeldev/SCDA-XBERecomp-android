@@ -59,10 +59,19 @@ if(ANDROID)
     set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(glslang GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git GIT_TAG 16.0.0 GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(tomlplusplus imgui SDL3 opus directx_headers glslang)
+    FetchContent_Declare(volk GIT_REPOSITORY https://github.com/zeux/volk.git
+        GIT_TAG 0b17a763ba5643e32da1b2152f8140461b3b7345)
+    FetchContent_MakeAvailable(volk)
+    target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_ANDROID_KHR)
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        FetchContent_Declare(adrenotools GIT_REPOSITORY https://github.com/bylaws/libadrenotools.git
+            GIT_TAG 8fae8ce254dfc1344527e05301e43f37dea2df80)
+        FetchContent_MakeAvailable(adrenotools)
+    endif()
     set(GEN ${CMAKE_CURRENT_SOURCE_DIR}/generated/game)
 
     file(GLOB ANDROID_SOURCES CONFIGURE_DEPENDS src/*/*.cpp)
-    list(FILTER ANDROID_SOURCES EXCLUDE REGEX "/src/versus/|/src/android/main\\.cpp")
+    list(FILTER ANDROID_SOURCES EXCLUDE REGEX "/src/versus/|/src/android/(main|gpu_probe)\\.cpp")
     # Windows' own, src/android has what stands in for them
     list(FILTER ANDROID_SOURCES EXCLUDE REGEX
         "/src/app/(main|splash|cursor|handover|game_code|system_info|focus_pause)\\.cpp|/src/audio/xaudio2\\.cpp")
@@ -78,9 +87,17 @@ if(ANDROID)
     # optimized in debug builds too: at -O0 the render thread and the renderer hold a phone to half its frame rate
     target_compile_options(scda_host PRIVATE -O2 -fno-strict-aliasing)
     target_compile_definitions(scda_host PRIVATE ENABLE_HLSL)  # glslang's HLSL calls in its headers
-    target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus vulkan log
+    target_link_libraries(scda_host PRIVATE tomlplusplus::tomlplusplus SDL3::SDL3 opus volk android log
         glslang glslang-default-resource-limits)
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        target_link_libraries(scda_host PRIVATE adrenotools)
+        add_dependencies(scda_host main_hook hook_impl)
+    endif()
     target_link_options(scda_host PRIVATE -Wl,-z,global -Wl,-z,undefs)
+
+    # the launcher's Turnip eligibility check, without the host or a Vulkan driver
+    add_library(scda_gpuprobe SHARED src/android/gpu_probe.cpp)
+    target_include_directories(scda_gpuprobe PRIVATE src)
 
     add_library(main SHARED src/android/main.cpp)
     target_link_libraries(main PRIVATE SDL3::SDL3 log)

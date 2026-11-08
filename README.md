@@ -24,7 +24,7 @@ Unofficial **original Xbox → Android ARM64 / x86_64** port using static recomp
 
 ## Status
 
-[**0.1.0-testing.7**](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.1.0-testing.7) — testing prerelease, not stable. APK and Windows builder support ARM64 + x86_64. Adds phone gyro aiming (opt-in, while aiming only), separate gyro X/Y inversion and calibration feedback. Intro movies are skipped by default; saved preferences are preserved.
+[**0.2.0-testing.1**](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.2.0-testing.1) — testing prerelease, not stable. APK and Windows builder support ARM64 + x86_64. New in-game-style launcher and optional bundled Turnip driver with supported-Adreno detection. Manufacturer driver remains default; phone gyro and touch controls remain available.
 
 Gameplay confirmed on Adreno 710 and experimentally on Mali-G51; x86_64 emulator tested through the title screen. See the wiki for [tested devices, level-transition results and known limitations](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Compatibility). Other Mali drivers, 16-KiB devices and extended stability remain untested.
 

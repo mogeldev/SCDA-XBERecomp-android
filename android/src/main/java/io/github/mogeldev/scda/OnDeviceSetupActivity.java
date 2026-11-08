@@ -25,29 +25,6 @@ public class OnDeviceSetupActivity extends SetupActivity {
             && new File(getApplicationInfo().nativeLibraryDir, "libprobe_clang.so").isFile();
     }
 
-    @Override protected void showImportLicenses() {
-        StringBuilder text = new StringBuilder();
-        try {
-            String[] names = getAssets().list("licenses");
-            if (names == null) throw new IOException("Missing import-tool licenses");
-            for (String name : names) {
-                text.append("\n=== ").append(name).append(" ===\n");
-                try (java.io.Reader reader = new java.io.InputStreamReader(getAssets().open("licenses/" + name), StandardCharsets.UTF_8)) {
-                    char[] buffer = new char[4096];
-                    int count;
-                    while ((count = reader.read(buffer)) != -1) text.append(buffer, 0, count);
-                }
-            }
-        } catch (IOException e) { text.append(e.getMessage()); }
-        android.widget.TextView content = new android.widget.TextView(this);
-        content.setText(text);
-        content.setTextIsSelectable(true);
-        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
-        scroll.addView(content);
-        new android.app.AlertDialog.Builder(this).setTitle("Compiler / import-tool licenses").setView(scroll)
-            .setPositiveButton("Close", null).show();
-    }
-
     @Override protected void importSource(android.net.Uri uri, File external, int machine, GameImport.Progress progress) throws IOException {
         if (!supportsLocalCompilation()) { super.importSource(uri, external, machine, progress); return; }
         if (android.provider.DocumentsContract.isTreeUri(uri)) {

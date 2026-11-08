@@ -25,6 +25,9 @@
 #include <toml++/toml.hpp>
 
 #include "app/app.h"
+#ifdef __ANDROID__
+#include "android/vulkan_driver.h"
+#endif
 #include "audio/output.h"
 #include "core/log.h"
 
@@ -101,6 +104,9 @@ Settings& Get() {
 
 void Load() {
     Settings& s = Get();
+#ifdef __ANDROID__
+    s.turnip = android_driver::Requested();
+#endif
     toml::table t;
     try {
         t = toml::parse_file(File().string());
@@ -285,6 +291,9 @@ toml::table Table() {
 }  // namespace
 
 void Save() {
+#ifdef __ANDROID__
+    if (!android_driver::Select(Get().turnip)) LOGW("vulkan: could not save driver selection");
+#endif
     std::ofstream f(File());
     f << Table() << "\n";
 }

@@ -45,6 +45,7 @@ public class SetupActivity extends Activity {
         }
         setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses, this::cancelSetup);
         setup.version(GameImport.appVersion != null ? GameImport.appVersion : "unknown version");
+        DriverChoice.attach(setup.driver);
         setup.update.setOnClickListener(view -> checkUpdates());
         setup.play.setOnClickListener(view -> launchGame());
         select = setup.select;
@@ -108,17 +109,14 @@ public class SetupActivity extends Activity {
                 if (isDestroyed() || isFinishing()) return;
                 setup.update.setEnabled(true);
                 setup.update.setText("Check for updates");
-                android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
-                    .setTitle(tag != null ? "Update available" : "Updates").setMessage(text);
-                if (tag != null) dialog.setPositiveButton("Open release page", (d, which) -> {
+                setup.message(tag != null ? "Update available" : "Updates", text,
+                    tag != null ? "Open release page" : null, () -> {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(UpdateCheck.page(tag))));
                     } catch (ActivityNotFoundException e) {
                         status.setText("No browser available. Open " + UpdateCheck.page(tag));
                     }
-                }).setNegativeButton("Close", null);
-                else dialog.setPositiveButton("Close", null);
-                dialog.show();
+                });
             });
         }, "SCDA update check").start();
     }
@@ -146,13 +144,36 @@ public class SetupActivity extends Activity {
                 + "Inside assets/: default.xbe, Default/ and Media/.\n\n"
                 + "Allow space for the extracted game in addition to the ZIP. Keep setup open; Back cancels. "
                 + "Saves and settings are not changed. Controller recommended; touch controls are available.";
-        new android.app.AlertDialog.Builder(this).setTitle("Requirements").setMessage(message)
-            .setPositiveButton("Close", null).show();
+        String[] labels = {"Game", "Formats / setup", "Storage", "Device", "Controls", "Your data"};
+        String[] details = {
+            "Your own supported original Xbox copy is required. Not PC or Xbox 360. The importer checks the executable hash. No game content is included.",
+            message,
+            "Allow about 3.5 GB for campaign files, plus the input copy and temporary extraction. Local compilation requires at least 512 MiB free. A working installation does not need reimporting after a normal app update.",
+            "Android 10 or newer (Android 10 experimental). Vulkan 1.1. ARM64 supports local compilation; x86_64 requires the matching Windows builder ZIP. Compatibility depends on the GPU and driver.",
+            "Controller recommended; touch controls are available. Optional phone gyro aiming is configured in the in-game controller settings.",
+            "Install updates over the existing app with the same signing certificate. Do not uninstall or clear app data: saves and settings would be deleted."
+        };
+        setup.browse("Requirements", labels, i -> details[i], false);
     }
 
     // Builds without installed compiler tools retain the Windows-builder ZIP path.
     protected boolean supportsLocalCompilation() { return false; }
-    protected void showImportLicenses() {}
+    protected void showImportLicenses() {
+        try {
+            String[] names = getAssets().list("licenses");
+            if (names == null || names.length == 0) throw new IOException("No packaged notices found.");
+            java.util.Arrays.sort(names);
+            setup.browse("Licenses", names, i -> {
+                try (java.io.Reader reader = new java.io.InputStreamReader(getAssets().open("licenses/" + names[i]),
+                        java.nio.charset.StandardCharsets.UTF_8)) {
+                    StringBuilder text = new StringBuilder();
+                    char[] buffer = new char[4096];
+                    for (int n; (n = reader.read(buffer)) != -1;) text.append(buffer, 0, n);
+                    return text.toString();
+                } catch (IOException e) { return "Cannot read notice: " + e.getMessage(); }
+            }, true);
+        } catch (IOException e) { setup.message("Licenses", e.getMessage(), null, null); }
+    }
     protected void compileGame(File files, GameImport.Progress progress) throws IOException {}
     protected void importSource(Uri uri, File files, int machine, GameImport.Progress update) throws IOException {
         try (InputStream input = getContentResolver().openInputStream(uri)) {
@@ -297,6 +318,7 @@ public class SetupActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (worker != null) cancelSetup();
+        else if (setup != null && setup.back()) return;
         else if (setup != null && setup.isWorkPageVisible()) cancelSetup();
         else super.onBackPressed();
     }

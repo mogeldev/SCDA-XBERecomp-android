@@ -1,6 +1,15 @@
 # SCDA Android port: notes
 
-State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player builder and first-boot game ZIP importer.
+Current release: 0.2.0-testing.1. Optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+
+## 0.2.0-testing.1 validation
+
+- Adreno 710 phone: user confirmed Turnip start/gameplay, no apparent visual issues, chip detection and switching back. Logs verified chip `0x07010000` and Mesa Turnip, not fallback.
+- Same stationary starting scene: 60-second captures, six periodic FPS samples each: manufacturer mean 62.4 FPS, Turnip 69.3, manufacturer repeat 62.3 (~11% gain for this scene only). Not a continuous frame-time/stutter benchmark. No broad GPU or campaign claim.
+- User deleted their own app/data for a fresh test, then confirmed new launcher setup/import/compile/game start works. The assistant did not clear device data. Test APK predates final release version bump.
+- New launcher uses native landscape views, requirements categories and actual packaged license text. In-place updates retain saves/settings/imported files/caches. Existing game overwrite is still refused.
+- Full source/provenance and reconstruction record for the bundled Turnip and loader dependencies: `tools/turnip/SOURCES.md`; source attachment mandatory. Binary provenance follows upstream metadata and embedded Mesa revision, not independent byte-identical reproduction.
+- Other Adreno models remain source-listed, not physically tested. Extended stability, 16-KiB hardware, broader visuals and lifecycle/failure paths remain open.
 
 ## Scope
 

@@ -74,8 +74,13 @@ class ProductionSetupTest(unittest.TestCase):
 
     def test_setup_layout_constraints(self):
         view = (JAVA / 'SetupView.java').read_text(encoding='utf-8')
-        self.assertIn('available * 0.8f', view)
-        self.assertIn('extends ScrollView', view)
+        self.assertIn('available * (fontScale > 1.2f ? 0.94f : 0.8f)', view)
+        self.assertIn('extends LinearLayout', view)
+        self.assertIn('new ScrollView', view)
+        self.assertIn('SCDA - Android', view)
+        self.assertIn('boolean back()', view)
+        self.assertIn('void browse(', view)
+        self.assertIn('void driverPage(', view)
         self.assertIn('fontScale', view)
         self.assertIn('state_focused', view)
         self.assertIn('setMinHeight(dp(48))', view)

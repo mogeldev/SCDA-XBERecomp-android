@@ -66,6 +66,9 @@ struct Settings {
     bool scaled_presentation = true;
     bool native_effect_size = true;
     bool fast_glow = false;
+#ifdef __ANDROID__
+    bool turnip = false;  // shared with the launcher's recovery selector, effective next process start
+#endif
     bool async_shaders = true;       // a draw whose pipeline needs compiling is skipped until the build threads have it; scda.toml only
     bool custom_textures = true;     // images in textures\replacement\ beside the exe replace the game's
     bool dump_textures = false;      // each texture once into textures\dumps\ beside the exe
