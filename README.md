@@ -17,15 +17,21 @@ Unofficial **original Xbox → Android ARM64 / x86_64** port using static recomp
 1. Install the APK (includes ARM64 and x86_64) and open SCDA.
 2. **ARM64:** import **ISO/XISO, ZIP, 7z, RAR, TAR**, or an extracted game folder. **x86_64:** import a game ZIP from the matching [Windows builder](tools/android-builder/README.md); it includes both architectures, and the app selects the right library. On-device compilation is ARM64-only. Archives may contain one ISO or game folder. Encrypted/split archives are unsupported.
 3. Keep setup open while it compiles on your phone—about **6–8 minutes for compilation** on the tested device, plus import time. Back cancels; **Compile / resume** retains verified work.
-4. Play with a controller. Start at **50% render resolution**.
+4. Play with touch controls or an SDL-compatible controller. Start at **50% render resolution**.
+
+Touch controls appear automatically when no controller is connected. In **Recomp Settings → CONTROLLER → GENERAL**, set **TOUCH CONTROLS** to AUTOMATIC / ON / OFF and adjust **TOUCH CONTROLS OPACITY** (10–100%, default 50%). Button positions and sizes are fixed.
 
 The app opens as a launcher (Play, Check for updates). **Check for updates** asks GitHub only when tapped and opens the newest release page (pre-releases included); nothing is downloaded or installed automatically. The Windows builder has the same button. Windows is optional on ARM64; x86_64 needs a prebuilt game ZIP from the [Windows builder](tools/android-builder/README.md), which produces compatible dual-ABI ZIPs; use the builder of the same version as the app. **Uninstalling or clearing app data deletes saves/settings.** Updates require a matching signing certificate.
 
 ## Status
 
-**Testing → RC → Stable**, starting at **0.1.0**; debug signing only. The [current prerelease](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) is **0.1.0-testing.6** with a dual-ABI APK and matching dual-ABI Windows builder, including experimental Android 10 support and the automatic Mali-G51 workaround.
+[**0.1.0-testing.6**](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.1.0-testing.6) — testing prerelease, not stable. APK and Windows builder support ARM64 + x86_64.
 
-ISO → on-device compilation → gameplay confirmed on Redmi Note 13 Pro 5G / Adreno 710. **Experimental:** Full first-run on-device compilation, game launch and gameplay with good-looking visuals were user-confirmed on Huawei AGS3K / Mali-G51 (Android 10). The same build was user-tested on the Android 16 / Adreno 710 phone without apparent regressions. A shader-compiler workaround is enabled only for the tested ARM Mali-G51 driver (`0x04800000`, r18p0); other Mali GPUs/drivers are unchanged. Toolchain corresponding-source and licensing requirements are complete for this testing build. Production-package upgrade/picker tests, low-storage stress and 16-KiB device coverage remain open; other Mali GPUs/drivers are untested.
+- **Adreno 710 / Android 16:** compilation and gameplay confirmed; level 1 → 2 works repeatedly in the user's current build.
+- **Mali-G51 / Android 10 (experimental):** compilation and gameplay confirmed, with an automatic workaround for the tested driver.
+- **x86_64 emulator:** builder-ZIP import and title screen confirmed; campaign gameplay unverified.
+
+Other Mali drivers, 16-KiB devices and extended stability remain untested. Detailed coverage and limitations: [port notes](ANDROID_PORT_NOTES.md).
 
 [Build](android/BUILDING.md) · [Tests](android/tests/README.md) · [Validation](tools/on-device-setup/README.md) · [Port notes](ANDROID_PORT_NOTES.md) · [Release policy](RELEASING.md)
 

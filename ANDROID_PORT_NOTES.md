@@ -35,9 +35,14 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 
 Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunch, 8344e24 pad bridge, 405cc4e Vulkan renderer, c38a742 runs on the phone, 94f4cfc late readbacks / border colours / unfiltered depth, 9a7852e 50% render default and -O2 host.
 
-## Next session, in this order
+## User validation follow-up
 
-1. Extend Mali-G51 gameplay/visual testing (including CPU BC decoding), Android 10 import-format coverage, and coverage of other Mali GPUs/drivers.
+- On the Android 16 / Adreno 710 phone, the transition from level 1 to level 2 succeeds repeatedly in the user's current build. The previously reported problem is no longer reproducible in this scenario; the responsible change has not been identified. The exact installed APK version was not recorded for this follow-up. Other level transitions are not covered by this result.
+- No further tablet testing is planned by the user; future manual testing focuses on the phone. Existing Huawei AGS3K / Mali-G51 results remain valid within their recorded scope. Tablet level transitions and extended tablet stability remain unverified, not required next-session tasks.
+
+## Next session
+
+1. Continue phone gameplay/level-transition coverage when the user chooses to test. Broader Mali/Android 10 import-format coverage remains an open limitation, without a planned tablet test.
 
 ## Architecture
 
