@@ -159,6 +159,7 @@ final class GameImport {
         byte[] xbe = header(stage.resolve("assets/default.xbe"), 4);
         if (xbe[0] != 'X' || xbe[1] != 'B' || xbe[2] != 'E' || xbe[3] != 'H')
             throw new IOException("default.xbe is not an Xbox executable.");
+        selectLibrary(stage, machine);
         if (allowAssetsOnly && !Files.exists(stage.resolve("libscda_code.so"))) {
             try {
                 java.security.MessageDigest hash = java.security.MessageDigest.getInstance("SHA-1");
@@ -179,14 +180,35 @@ final class GameImport {
             return;
         }
         checkVersion(stage);
-        byte[] elf = header(stage.resolve("libscda_code.so"), 20);
+        validateLibrary(stage.resolve("libscda_code.so"), machine);
+        interrupted();
+        progress.update("Import complete", -1);
+    }
+
+    // Normalize dual-ABI builder ZIPs to the existing single-library runtime layout before publication.
+    private static void selectLibrary(Path stage, int machine) throws IOException {
+        Path libs = stage.resolve("lib");
+        if (!Files.exists(libs)) return;
+        if (Files.exists(stage.resolve("libscda_code.so"))) throw new IOException("Ambiguous game ZIP: root and ABI libraries both present.");
+        for (String abi : new String[]{"arm64-v8a", "x86_64"}) {
+            Path library = libs.resolve(abi + "/libscda_code.so");
+            if (Files.exists(library)) validateLibrary(library, abi.equals("arm64-v8a") ? 183 : 62);
+        }
+        String abi = machine == 183 ? "arm64-v8a" : machine == 62 ? "x86_64" : null;
+        if (abi == null || !Files.isRegularFile(libs.resolve(abi + "/libscda_code.so")))
+            throw new IOException("Game ZIP has no library for this device. Use the matching ARM64 + x86_64 builder.");
+        checkVersion(stage);
+        Files.move(libs.resolve(abi + "/libscda_code.so"), stage.resolve("libscda_code.so"));
+        deleteTree(libs);
+    }
+
+    private static void validateLibrary(Path file, int machine) throws IOException {
+        byte[] elf = header(file, 20);
         int type = (elf[16] & 255) | ((elf[17] & 255) << 8);
         int arch = (elf[18] & 255) | ((elf[19] & 255) << 8);
         if (elf[0] != 0x7f || elf[1] != 'E' || elf[2] != 'L' || elf[3] != 'F'
                 || elf[4] != 2 || elf[5] != 1 || type != 3 || arch != machine)
             throw new IOException("libscda_code.so is not a matching 64-bit Android library. Use the matching player builder.");
-        interrupted();
-        progress.update("Import complete", -1);
     }
 
     // A prebuilt library must come from the builder of the same version. ZIPs from before versioning carry no file.
@@ -200,19 +222,21 @@ final class GameImport {
                 + ". Use the builder with the same version as the app, or install the matching app version.");
     }
 
-    private static void validateName(String name, boolean directory) throws IOException {
+    static void validateName(String name, boolean directory) throws IOException {
         if (name.isEmpty() || name.startsWith("/") || name.contains("\\") || name.contains(":") || name.indexOf('\0') >= 0)
             throw new IOException("Unsafe ZIP path: " + name);
         for (String part : name.split("/", -1)) {
             if (part.isEmpty() || part.equals(".") || part.equals("..")) throw new IOException("Unsafe ZIP path: " + name);
         }
         boolean allowed = directory
-            ? name.equals("assets") || name.equals("assets/Default") || name.startsWith("assets/Default/")
+            ? name.equals("lib") || name.equals("lib/arm64-v8a") || name.equals("lib/x86_64")
+                || name.equals("assets") || name.equals("assets/Default") || name.startsWith("assets/Default/")
                 || name.equals("assets/Media") || name.startsWith("assets/Media/")
-            : name.equals("libscda_code.so") || name.equals(VERSION_FILE) || name.equals("assets/default.xbe")
+            : name.equals("libscda_code.so") || name.equals("lib/arm64-v8a/libscda_code.so")
+                || name.equals("lib/x86_64/libscda_code.so") || name.equals(VERSION_FILE) || name.equals("assets/default.xbe")
                 || name.startsWith("assets/Default/") || name.startsWith("assets/Media/");
         if (!allowed) throw new IOException("Unexpected ZIP path: " + name
-            + ". Put libscda_code.so and assets/ at the ZIP root; include campaign files only.");
+            + ". Put assets/ and lib/<ABI>/libscda_code.so (or legacy libscda_code.so) at the ZIP root; include campaign files only.");
     }
 
     private static boolean hasFiles(Path dir) throws IOException {

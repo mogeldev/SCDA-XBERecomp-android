@@ -22,19 +22,19 @@ try {
     }
 } finally { $zip.Dispose() }
 Expand-Archive -LiteralPath (Resolve-Path -LiteralPath $Package).Path -DestinationPath $root
-$assembly = [Reflection.Assembly]::LoadFile((Join-Path $root 'SCDA-Android-ARM64-Builder.exe'))
+$assembly = [Reflection.Assembly]::LoadFile((Join-Path $root 'SCDA-Android-Builder.exe'))
 Assert ($assembly.GetManifestResourceNames().Count -eq 0) 'GUI still embeds a compiler payload.'
 $references = @($assembly.GetReferencedAssemblies() | ForEach-Object { $_.Name })
 Assert ($references -contains 'PresentationFramework') 'Builder does not reference WPF.'
 Assert ($references -notcontains 'System.Windows.Forms') 'Builder still references WinForms.'
-Assert ((Get-Item "$root/SCDA-Android-ARM64-Builder.exe").Length -lt 1MB) 'GUI executable unexpectedly large.'
+Assert ((Get-Item "$root/SCDA-Android-Builder.exe").Length -lt 1MB) 'GUI executable unexpectedly large.'
 $window = [Activator]::CreateInstance($assembly.GetType('BuilderWindow', $true), $true)
 try {
     $window.Show()
     [Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([Action] {})
     $version = (Get-Content -LiteralPath "$root/version.txt" -Raw).Trim()
     Assert ($version -match '^[0-9]+\.[0-9]+\.[0-9]+') 'Missing builder version.txt.'
-    Assert ($window.IsVisible -and $window.Title -eq "SCDA Android ARM64 Builder $version") 'GUI window did not open with its version.'
+    Assert ($window.IsVisible -and $window.Title -eq "SCDA Android Builder $version") 'GUI window did not open with its version.'
     $captions = [Collections.Generic.List[string]]::new()
     function Find-Captions($control) {
         if ($control -is [Windows.Controls.ContentControl] -and $control.Content -is [string]) { $captions.Add($control.Content) }
@@ -87,8 +87,10 @@ try {
     Assert (Test-Path -LiteralPath $importZip) 'GUI build pipeline did not create import ZIP.'
     $gameZip = [IO.Compression.ZipFile]::OpenRead($importZip)
     try {
-        Assert ($gameZip.Entries.Count -eq 5) 'Unexpected import ZIP shape.'
-        Assert ($gameZip.GetEntry('libscda_code.so').Length -gt 1MB) 'Missing library in import ZIP.'
+        Assert ($gameZip.Entries.Count -eq 6) 'Unexpected import ZIP shape.'
+        foreach ($abi in 'arm64-v8a', 'x86_64') {
+            Assert ($gameZip.GetEntry("lib/$abi/libscda_code.so").Length -gt 1MB) "Missing $abi library in import ZIP."
+        }
         $reader = [IO.StreamReader]::new($gameZip.GetEntry('scda-version.txt').Open())
         try { Assert ($reader.ReadToEnd().Trim() -eq $version) 'Import ZIP lacks the builder version.' } finally { $reader.Dispose() }
     } finally { $gameZip.Dispose() }
@@ -104,7 +106,7 @@ try {
     Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'iso-*').Count -eq 0) 'ISO extraction was not cleaned up.'
     $gameZip = [IO.Compression.ZipFile]::OpenRead($isoZip)
     try {
-        Assert ($gameZip.Entries.Count -eq 5 -and $gameZip.GetEntry('scda-version.txt')) 'Unexpected ISO-to-ZIP shape.'
+        Assert ($gameZip.Entries.Count -eq 6 -and $gameZip.GetEntry('scda-version.txt')) 'Unexpected ISO-to-ZIP shape.'
         $xbeEntry = $gameZip.GetEntry('assets/default.xbe').Open()
         try {
             $sha = [Security.Cryptography.SHA1]::Create()
@@ -126,10 +128,11 @@ try {
         Invoke-Builder 'ValidatePaths' @("$root/assets", "$root/assets/game.zip")
         throw 'Output inside source folder was accepted.'
     } catch { Assert ($_.Exception.Message -match 'outside your source') 'Wrong output validation error.' }
-    $output = Get-Item -LiteralPath "$root/libscda_code.so"
+    foreach ($abi in 'arm64-v8a', 'x86_64') {
+    $output = Get-Item -LiteralPath "$root/lib/$abi/libscda_code.so"
     $bytes = [IO.File]::ReadAllBytes($output.FullName)
     Assert ($bytes[0] -eq 0x7f -and $bytes[1] -eq 0x45 -and $bytes[2] -eq 0x4c -and $bytes[3] -eq 0x46) 'Not an ELF library.'
-    Assert ($bytes[4] -eq 2 -and $bytes[5] -eq 1 -and [BitConverter]::ToUInt16($bytes, 16) -eq 3 -and [BitConverter]::ToUInt16($bytes, 18) -eq 183) 'Not an ARM64 little-endian ELF64 shared library.'
+    Assert ($bytes[4] -eq 2 -and $bytes[5] -eq 1 -and [BitConverter]::ToUInt16($bytes, 16) -eq 3 -and [BitConverter]::ToUInt16($bytes, 18) -eq $(if ($abi -eq 'arm64-v8a') { 183 } else { 62 })) "Not a matching $abi little-endian ELF64 shared library."
     $dynamic = (& $readelf -d $output.FullName) -join "`n"
     Assert ($LASTEXITCODE -eq 0 -and $dynamic -match 'NEEDED.*\[libscda_host.so\]' -and $dynamic -match 'SONAME.*\[libscda_code.so\]') 'Missing host dependency or code SONAME.'
     $symbols = (& $readelf --dyn-syms $output.FullName) -join "`n"
@@ -139,16 +142,19 @@ try {
     Assert ($symbols -notmatch 'UND\s+__aarch64_') 'Outlined atomic helpers are unresolved.'
     Assert ($symbols -notmatch 'UND\s+_Unwind_Resume\b') 'Android 10 requires the game unwinder to be linked in.'
     Assert ($symbols -match 'UND\s+__gxx_personality_v0') 'Expected shared exception runtime import missing.'
-    $built = (Get-Item -LiteralPath "$root/work/libscda_code.so").LastWriteTimeUtc
+    }
+    $built = (Get-Item -LiteralPath "$root/work/lib/arm64-v8a/libscda_code.so").LastWriteTimeUtc
+    $builtX64 = (Get-Item -LiteralPath "$root/work/lib/x86_64/libscda_code.so").LastWriteTimeUtc
     $again = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/build.ps1" -Jobs 8
     Assert ($LASTEXITCODE -eq 0 -and ($again -join "`n") -match 'no work to do') 'Second run was not incremental.'
-    Assert ((Get-Item -LiteralPath "$root/work/libscda_code.so").LastWriteTimeUtc -eq $built) 'No-op run relinked the library.'
+    Assert ((Get-Item -LiteralPath "$root/work/lib/arm64-v8a/libscda_code.so").LastWriteTimeUtc -eq $built) 'No-op run relinked the library.'
+    Assert ((Get-Item -LiteralPath "$root/work/lib/x86_64/libscda_code.so").LastWriteTimeUtc -eq $builtX64) 'No-op run relinked x86_64.'
     # A cancelled/failed compilation must leave other completed objects reusable.
-    Remove-Item -LiteralPath "$root/work/obj/x86_recomp.127.cpp.o"
+    Remove-Item -LiteralPath "$root/work/obj/arm64-v8a/x86_recomp.127.cpp.o"
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/build.ps1" -Jobs 8
-    Assert ($LASTEXITCODE -eq 0 -and (Test-Path "$root/work/obj/x86_recomp.127.cpp.o")) 'Resuming with one missing object failed.'
-    Write-Host "PASS: GUI window/controls, small EXE with companion tools, folder/ISO build-to-ZIP, ISO immutability/cleanup/rejection, path validation, missing/invalid XBE, full ARM64 build, exports, host dependency, inline atomics, no-op rebuild and resume."
-    Write-Host "Test output retained at $root/libscda_code.so"
+    Assert ($LASTEXITCODE -eq 0 -and (Test-Path "$root/work/obj/arm64-v8a/x86_recomp.127.cpp.o")) 'Resuming with one missing object failed.'
+    Write-Host "PASS: GUI window/controls, small EXE with companion tools, folder/ISO build-to-ZIP, ISO immutability/cleanup/rejection, path validation, missing/invalid XBE, full ARM64 + x86_64 builds, exports, host dependency, inline atomics, no-op rebuild and resume."
+    Write-Host "Test output retained at $root/lib/"
 } finally {
     $env:PATH = $oldPath
 }

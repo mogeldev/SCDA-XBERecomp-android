@@ -170,6 +170,42 @@ public final class GameImportTest {
             Path x64 = Files.createDirectory(root.resolve("x64"));
             GameImport.extract(new ByteArrayInputStream(zip(game(62))), x64.toFile(), 62, (name, bytes) -> {});
             check(GameImport.isInstalled(x64.toFile()), "x86_64 emulator import failed");
+            Map<String, byte[]> universal = game(183);
+            universal.put("lib/arm64-v8a/libscda_code.so", universal.remove("libscda_code.so"));
+            universal.put("lib/x86_64/libscda_code.so", game(62).get("libscda_code.so"));
+            universal.put("lib/", new byte[0]);
+            universal.put("lib/arm64-v8a/", new byte[0]);
+            universal.put("lib/x86_64/", new byte[0]);
+            for (int machine : new int[]{183, 62}) {
+                Path both = Files.createDirectory(root.resolve("universal-" + machine));
+                GameImport.extract(new ByteArrayInputStream(zip(universal)), both.toFile(), machine, machine == 183, (name, bytes) -> {});
+                check(GameImport.isInstalled(both.toFile()), "Universal ZIP not installed");
+                check((Files.readAllBytes(both.resolve("game/libscda_code.so"))[18] & 255) == machine, "Wrong ABI selected");
+                check(!Files.exists(both.resolve("game/lib")), "Unselected libraries retained");
+            }
+            GameImport.appVersion = "0.1.0-testing.6";
+            Map<String, byte[]> universalVersion = new LinkedHashMap<>(universal);
+            universalVersion.put(GameImport.VERSION_FILE, "0.1.0-testing.5".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            rejected(zip(universalVersion), root, "universal ZIP version mismatch");
+            universalVersion.put(GameImport.VERSION_FILE, "0.1.0-testing.6".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Path matchedDual = Files.createDirectory(root.resolve("universal-versioned"));
+            GameImport.extract(new ByteArrayInputStream(zip(universalVersion)), matchedDual.toFile(), 183, true, (name, bytes) -> {});
+            check(GameImport.isInstalled(matchedDual.toFile()), "Matching universal version rejected");
+            GameImport.appVersion = null;
+            Map<String, byte[]> mixed = new LinkedHashMap<>(universal);
+            mixed.put("libscda_code.so", game(183).get("libscda_code.so"));
+            rejected(zip(mixed), root, "ambiguous root and ABI libraries");
+            Map<String, byte[]> missingAbi = new LinkedHashMap<>(universal);
+            missingAbi.remove("lib/arm64-v8a/libscda_code.so");
+            rejected(zip(missingAbi), root, "missing selected ABI");
+            Map<String, byte[]> wrongAbi = new LinkedHashMap<>(universal);
+            wrongAbi.put("lib/x86_64/libscda_code.so", game(183).get("libscda_code.so"));
+            rejected(zip(wrongAbi), root, "wrong unselected ABI header");
+            for (String path : new String[]{"lib/armeabi-v7a/libscda_code.so", "lib/x86_64/extra.so", "lib/../libscda_code.so"}) {
+                Map<String, byte[]> bad = new LinkedHashMap<>(universal);
+                bad.put(path, new byte[]{1});
+                rejected(zip(bad), root, path);
+            }
             // Opt-in local compilation still accepts prebuilt ZIPs and rejects unsupported assets-only images.
             Path localPrebuilt = Files.createDirectory(root.resolve("local-prebuilt"));
             GameImport.extract(new ByteArrayInputStream(valid), localPrebuilt.toFile(), 183, true, (name, bytes) -> {});
@@ -196,11 +232,13 @@ public final class GameImportTest {
                 System.out.println("PASS: supported assets-only ZIP imported; awaits compilation");
             }
             if (args.length == 1) {
-                Path actual = Files.createDirectory(root.resolve("actual game"));
-                try (java.io.InputStream input = Files.newInputStream(Path.of(args[0]))) {
-                    GameImport.extract(input, actual.toFile(), 183, (name, bytes) -> {});
+                for (int machine : new int[]{183, 62}) {
+                    Path actual = Files.createDirectory(root.resolve("actual game " + machine));
+                    try (java.io.InputStream input = Files.newInputStream(Path.of(args[0]))) {
+                        GameImport.extract(input, actual.toFile(), machine, (name, bytes) -> {});
+                    }
+                    check(GameImport.isInstalled(actual.toFile()), "Actual game ZIP not installed for " + machine);
                 }
-                check(GameImport.isInstalled(actual.toFile()), "Actual game ZIP not installed");
                 System.out.println("PASS: full game ZIP extracted and validated");
             }
             System.out.println("PASS: " + checks + " ZIP import checks");

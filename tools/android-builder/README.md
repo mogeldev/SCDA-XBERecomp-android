@@ -1,10 +1,10 @@
-# SCDA Android ARM64 builder
+# SCDA Android builder
 
-A Windows WPF GUI builder package that creates the Android game's import ZIP from your own extracted Xbox game. It runs on **Windows 10/11 x64** and produces **Android ARM64** code—not a PC game or Windows ARM64 executable.
+A Windows WPF GUI builder package that creates the Android game's import ZIP from your own extracted Xbox game. It runs on **Windows 10/11 x64** and produces **Android ARM64 + x86_64** code in one game ZIP—not a PC game or Windows ARM64 executable. The app automatically selects the library matching its process ABI.
 
 ## Players
 
-1. Download the builder with the **same version as the app** (`SCDA-Android-<version>-Windows-Builder.zip`; the window title shows its version). Extract the complete builder ZIP into a writable folder and run `SCDA-Android-ARM64-Builder.exe`. Keep the EXE beside the `compiler/`, scripts and `licenses/` folders. No installation or administrator access is needed.
+1. Download the builder with the **same version as the app** (`SCDA-Android-<version>-Windows-Builder.zip`; the window title shows its version). Extract the complete builder ZIP into a writable folder and run `SCDA-Android-Builder.exe`. Keep the EXE beside the `compiler/`, scripts and `licenses/` folders. No installation or administrator access is needed.
 2. Beside **Game source**, click **Folder...** and select the extracted game folder containing `default.xbe`, `Default/` and `Media/`, or click **ISO...** and select an original Xbox XISO image. ISO contents are extracted automatically with the bundled `extract-xiso` tool; the ISO is never modified.
 3. Click **Save as...** to choose where to save `SCDA-game.zip`, outside the source game folder.
 4. Click **Build game ZIP**. The responsive WPF window shows the current phase, elapsed time, compiler progress and ZIP throughput. You can resize it or turn off **Follow output** while it works. A first build can take several minutes, followed by ZIP compression.
@@ -17,7 +17,7 @@ No command line, Visual Studio, Android SDK, Java, Python or separate runtime in
 ### Storage and retrying
 
 - Allow about **1 GB** for tools, generated code and compiled objects, plus room for your game files and the finished ZIP. ISO input additionally needs space for the complete extracted disc (including any versus data); temporary extraction is removed afterward. Replacing an existing ZIP temporarily requires space for both ZIPs.
-- Resumable builds stay in the builder folder's `work/` directory. ISO extraction uses a temporary `iso-...` folder in the builder directory and removes it after the ZIP is created. The **Tools / licenses** button opens the bundled `licenses/` folder.
+- Resumable builds share translated sources in `work/generated/` and keep objects separately in `work/obj/arm64-v8a/` and `work/obj/x86_64/`. Both libraries are built on every run; completed objects are reused. ISO extraction uses a temporary `iso-...` folder in the builder directory and removes it after the ZIP is created. The **Tools / licenses** button opens the bundled `licenses/` folder.
 - If a build fails, fix the reported error and click **Build game ZIP** again. Completed compilations are reused. Builds are serialized so two instances cannot write the same workspace.
 - The visible output is a bounded tail so very verbose compiler runs cannot lock up the UI. A complete timestamped copy is written to `build.log`; **Open full log** opens it in Notepad.
 - The existing output ZIP is replaced only after a new ZIP has been written successfully. Source game files are read-only inputs.
@@ -32,7 +32,9 @@ The GUI creates this layout automatically:
 
 ```text
 SCDA-game.zip
-├── libscda_code.so
+├── lib/
+│   ├── arm64-v8a/libscda_code.so
+│   └── x86_64/libscda_code.so
 ├── scda-version.txt  (builder version, checked by the app)
 └── assets/
     ├── default.xbe
@@ -60,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/android-builder/packag
   -Recompiler out/android-recompiler/compiler/xbe_recomp.exe -Xbe assets/default.xbe
 ```
 
-Output: `out/SCDA-Android-<version>-Windows-Builder.zip`, with `<version>` read from `versionName` in `android/build.gradle` and written to `version.txt` in the package. Publish it together with the APK built from the same commit. The package contains a small `SCDA-Android-ARM64-Builder.exe`, the pinned `extract-xiso.exe`, compiler tools, build/ZIP scripts, configs, freestanding headers, licenses, the supported XBE hash and an empty host link stub. Packaging compiles the WPF `Builder.cs` with Windows' .NET Framework `csc.exe` and builds extract-xiso from revision `3f5b62cfe68f000b0e3c8a30104973f3a297948e` using Visual Studio 2022 C++ (static runtime). The first packaging run fetches that source. No SDK-style .NET project, NuGet packages or runtime downloads are needed for players.
+Output: `out/SCDA-Android-<version>-Windows-Builder.zip`, with `<version>` read from `versionName` in `android/build.gradle` and written to `version.txt` in the package. Publish it together with the APK built from the same commit. The package contains a small `SCDA-Android-Builder.exe`, the pinned `extract-xiso.exe`, compiler tools, build/ZIP scripts, configs, freestanding headers, licenses, the supported XBE hash and per-ABI empty host link stubs and exception-unwinder archives. Packaging compiles the WPF `Builder.cs` with Windows' .NET Framework `csc.exe` and builds extract-xiso from revision `3f5b62cfe68f000b0e3c8a30104973f3a297948e` using Visual Studio 2022 C++ (static runtime). The first packaging run fetches that source. No SDK-style .NET project, NuGet packages or runtime downloads are needed for players.
 
 ISO support uses [extract-xiso](https://github.com/xboxdev/extract-xiso). This product includes software developed by in <in@fishtank.com>. The upstream license is included as `licenses/extract-xiso.txt`.
 

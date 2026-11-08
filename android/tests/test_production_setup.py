@@ -33,8 +33,17 @@ class ProductionSetupTest(unittest.TestCase):
             self.assertIn('-DANDROID_PLATFORM=android-29', (ROOT / file).read_text())
         builder = (ROOT / 'tools/android-builder/build.ps1').read_text()
         self.assertIn('aarch64-linux-android29', builder)
-        self.assertIn('@$out.rsp ../compiler/libunwind.a', builder)
-        self.assertIn('compiler/libunwind.a', (ROOT / 'tools/android-builder/package.ps1').read_text())
+        self.assertIn('x86_64-linux-android29', builder)
+        self.assertIn('@$out.rsp ../compiler/$abi/libunwind.a', builder)
+        self.assertIn('compiler/$abi/libunwind.a', (ROOT / 'tools/android-builder/package.ps1').read_text())
+
+    def test_release_abis_and_universal_builder(self):
+        gradle = (ROOT / 'android/build.gradle').read_text()
+        self.assertIn("['arm64-v8a', 'x86_64']", gradle)
+        package = (ROOT / 'tools/android-builder/package-game.ps1').read_text()
+        self.assertIn("foreach ($abi in 'arm64-v8a', 'x86_64')", package)
+        self.assertIn('"lib/$abi/libscda_code.so"', package)
+        self.assertIn('Path.Combine(tools, "lib")', (ROOT / 'tools/android-builder/Builder.cs').read_text())
 
     def test_debug_only_signing_for_both_variants(self):
         gradle = (ROOT / 'android/build.gradle').read_text()

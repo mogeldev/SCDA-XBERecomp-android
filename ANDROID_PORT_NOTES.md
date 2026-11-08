@@ -15,6 +15,13 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 - minSdk 29; **Android 10 support is experimental** (launcher window-inset fallback, guest-memory `memfd_create` syscall, API 29 compiler/import tools and a statically linked game-code unwinder).
 - Huawei AGS3K / Mali-G51 on Android 10: gameplay user-confirmed. Automatic shader workaround only for ARM vendor `0x13B5`, device name `Mali-G51`, driver `0x04800000` (r18p0): reconstruct screen-linear interpolation without `NoPerspective`, which crashes this driver's pipeline compiler. Source-specific shader cache hashes keep both variants separate. Other GPUs/drivers retain the original path. Full first-run tablet compilation → game launch → gameplay and good-looking visuals were user-confirmed, as was the Android 16 phone with no apparent regressions. Packaged compiler/linker and Windows-built library runtime checks also passed on Android 10. Longer-term visual/stability checks and broader import-format coverage remain open.
 
+## Dual-ABI releases (testing.6)
+
+- Release APKs include `arm64-v8a` and `x86_64` runtimes; no embedded game code.
+- The Windows builder translates once, compiles both ABIs with separate incremental objects, and writes `lib/arm64-v8a/libscda_code.so` and `lib/x86_64/libscda_code.so` into one private game ZIP. Its executable is now `SCDA-Android-Builder.exe`.
+- Import validates ABI headers and version, selects the app process's ABI, and publishes the existing `game/libscda_code.so` layout. Legacy single-library ZIPs remain supported. ARM64 archive/folder normalization also handles the new layout; x86_64 uses prebuilt ZIPs, not on-device compilation.
+- The exact testing.6 APK passed normal file-picker import of the new builder ZIP on the x86_64 Android 15 emulator; the x86_64 builder library reached intro/title with private campaign assets. Physical ARM64 update/gameplay on this version is not yet rechecked.
+
 ## Phases
 
 | Phase | State |

@@ -1,6 +1,6 @@
 param(
     [string]$Assets = (Join-Path $PSScriptRoot 'assets'),
-    [string]$Library = (Join-Path $PSScriptRoot 'libscda_code.so'),
+    [string]$Library = (Join-Path $PSScriptRoot 'lib'),
     [string]$Output = (Join-Path $PSScriptRoot 'SCDA-game.zip'),
     # the builder version, checked by the APK; absent in a source checkout
     [string]$VersionFile = (Join-Path $PSScriptRoot 'version.txt')
@@ -10,7 +10,12 @@ Set-StrictMode -Version Latest
 
 $assets = (Resolve-Path -LiteralPath $Assets).Path
 $library = (Resolve-Path -LiteralPath $Library).Path
-if ([IO.Path]::GetFileName($library) -ne 'libscda_code.so') { throw 'The library must be named libscda_code.so.' }
+$universal = Test-Path -LiteralPath $library -PathType Container
+if ($universal) {
+    foreach ($abi in 'arm64-v8a', 'x86_64') {
+        if (-not (Test-Path -LiteralPath "$library/$abi/libscda_code.so" -PathType Leaf)) { throw "Missing $abi/libscda_code.so." }
+    }
+} elseif ([IO.Path]::GetFileName($library) -ne 'libscda_code.so') { throw 'The library must be named libscda_code.so.' }
 foreach ($name in 'default.xbe', 'Default', 'Media') {
     if (-not (Test-Path -LiteralPath (Join-Path $assets $name))) { throw "Missing assets/$name." }
 }
@@ -44,7 +49,9 @@ try {
                 } finally { $target.Dispose() }
             } finally { $source.Dispose() }
         }
-        Add-File $library 'libscda_code.so'
+        if ($universal) {
+            foreach ($abi in 'arm64-v8a', 'x86_64') { Add-File "$library/$abi/libscda_code.so" "lib/$abi/libscda_code.so" }
+        } else { Add-File $library 'libscda_code.so' }
         if (Test-Path -LiteralPath $VersionFile -PathType Leaf) { Add-File (Resolve-Path -LiteralPath $VersionFile).Path 'scda-version.txt' }
         Add-File (Join-Path $assets 'default.xbe') 'assets/default.xbe'
         foreach ($folder in 'Default', 'Media') {

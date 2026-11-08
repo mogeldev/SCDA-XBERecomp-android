@@ -42,6 +42,24 @@ public final class GameSourceTest {
             check(GameImport.isInstalled(files.toFile()));
             check(!Files.exists(files.resolve("game/unpacked")));
             try (java.util.stream.Stream<Path> paths = Files.list(files.resolve("game"))) { check(paths.count() == 2); }
+            for (int machine : new int[]{183, 62}) {
+                Path dual = root.resolve("dual-" + machine);
+                GameSource.importFile(new ByteArrayInputStream(new byte[]{1}), dual.toFile(), machine,
+                    (tool, input, output, progress) -> {
+                        Path wrapper = output.resolve("wrapper");
+                        game(wrapper.resolve("assets"));
+                        byte[] elf = Files.readAllBytes(wrapper.resolve("assets/libscda_code.so"));
+                        Files.delete(wrapper.resolve("assets/libscda_code.so"));
+                        Files.createDirectories(wrapper.resolve("lib/arm64-v8a"));
+                        Files.createDirectories(wrapper.resolve("lib/x86_64"));
+                        Files.write(wrapper.resolve("lib/arm64-v8a/libscda_code.so"), elf);
+                        elf[18] = 62;
+                        Files.write(wrapper.resolve("lib/x86_64/libscda_code.so"), elf);
+                    }, (name, bytes) -> {});
+                check(GameImport.isInstalled(dual.toFile()));
+                check((Files.readAllBytes(dual.resolve("game/libscda_code.so"))[18] & 255) == machine);
+                check(!Files.exists(dual.resolve("game/lib")));
+            }
             for (String kind : new String[]{"ambiguous", "unsupported", "cancel", "failure"}) {
                 Path bad = root.resolve(kind);
                 try {

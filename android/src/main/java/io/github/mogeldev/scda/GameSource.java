@@ -107,12 +107,22 @@ final class GameSource {
         Path assets = stage.resolve("assets");
         Files.createDirectory(assets);
         for (String name : new String[]{"default.xbe", "Default", "Media"}) Files.move(root.resolve(name), assets.resolve(name));
-        Path library = root.resolve("libscda_code.so");
-        if (!Files.isRegularFile(library) && root.getFileName().toString().equals("assets"))
-            library = root.getParent().resolve("libscda_code.so");
-        if (Files.isRegularFile(library)) {
-            Files.move(library, stage.resolve("libscda_code.so"));
-            Path version = library.getParent().resolve(GameImport.VERSION_FILE);
+        Path codeRoot = root;
+        if (!Files.isRegularFile(root.resolve("libscda_code.so")) && !Files.isDirectory(root.resolve("lib"))
+                && root.getFileName().toString().equals("assets")) codeRoot = root.getParent();
+        Path library = codeRoot.resolve("libscda_code.so");
+        boolean hasLibrary = Files.isRegularFile(library), hasAbis = Files.isDirectory(codeRoot.resolve("lib"));
+        if (hasAbis) {
+            // Archive readers are broader than the ZIP importer; apply its strict code-directory allowlist here too.
+            try (java.util.stream.Stream<Path> paths = Files.walk(codeRoot.resolve("lib"))) {
+                for (Path path : paths.toArray(Path[]::new))
+                    GameImport.validateName(codeRoot.relativize(path).toString().replace('\\', '/'), Files.isDirectory(path));
+            }
+            Files.move(codeRoot.resolve("lib"), stage.resolve("lib"));
+        }
+        if (hasLibrary) Files.move(library, stage.resolve("libscda_code.so"));
+        if (hasLibrary || hasAbis) {
+            Path version = codeRoot.resolve(GameImport.VERSION_FILE);
             if (Files.isRegularFile(version, LinkOption.NOFOLLOW_LINKS)) Files.move(version, stage.resolve(GameImport.VERSION_FILE));
         }
         CompileCache.delete(unpacked);

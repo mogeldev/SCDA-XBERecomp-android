@@ -8,7 +8,7 @@ javac -d out\import-tests android\src\main\java\io\github\mogeldev\scda\GameImpo
 java -cp out\import-tests io.github.mogeldev.scda.GameImportTest
 ```
 
-It creates only temporary synthetic files; no game assets are included. To also extract and validate a private full game ZIP, append its path to the `java` command. Temporary extracted files are deleted afterward.
+It creates only temporary synthetic files; no game assets are included. Dual-ABI game ZIP checks cover selection for both ARM64 and x86_64, missing/mislabeled/ambiguous libraries, strict path allowlisting, version mismatch and legacy single-library compatibility. To also extract and validate a private full game ZIP, append its path to the `java` command. Temporary extracted files are deleted afterward.
 
 Test the PowerShell ZIP packager (including campaign-only filtering and failure preservation):
 

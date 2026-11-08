@@ -28,6 +28,22 @@ try {
         if (@(Compare-Object $actual $expected).Count) { throw "Unexpected ZIP entries: $actual" }
         if ($zip.GetEntry('assets/Default/sub/data').Length -eq 0) { throw 'Empty data entry.' }
     } finally { $zip.Dispose() }
+    New-Item -ItemType Directory -Force -Path "$root/lib/arm64-v8a", "$root/lib/x86_64" | Out-Null
+    foreach ($abi in 'arm64-v8a', 'x86_64') { Copy-Item "$root/libscda_code.so" "$root/lib/$abi/libscda_code.so" }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Assets "$root/assets" -Library "$root/lib" -Output "$root/universal.zip" -VersionFile "$root/version.txt"
+    if ($LASTEXITCODE) { throw 'Dual-ABI packaging failed.' }
+    $dual = [IO.Compression.ZipFile]::OpenRead("$root/universal.zip")
+    try {
+        if ($dual.Entries.Count -ne 6 -or -not $dual.GetEntry('lib/arm64-v8a/libscda_code.so') -or -not $dual.GetEntry('lib/x86_64/libscda_code.so')) { throw 'Wrong dual-ABI ZIP layout.' }
+    } finally { $dual.Dispose() }
+    $beforeDual = (Get-FileHash "$root/universal.zip").Hash
+    Remove-Item "$root/lib/x86_64/libscda_code.so"
+    $oldPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Assets "$root/assets" -Library "$root/lib" -Output "$root/universal.zip" 2>$null
+    } finally { $ErrorActionPreference = $oldPreference }
+    if ($LASTEXITCODE -eq 0 -or (Get-FileHash "$root/universal.zip").Hash -ne $beforeDual) { throw 'Missing ABI damaged the output or was accepted.' }
     $before = (Get-FileHash "$root/game.zip").Hash
     Remove-Item -LiteralPath "$root/assets/default.xbe"
     $oldPreference = $ErrorActionPreference

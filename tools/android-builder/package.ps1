@@ -29,15 +29,20 @@ try {
     Copy-Item -LiteralPath $Recompiler -Destination "$stage/compiler/xbe_recomp.exe"
     # Link-only stub: the phone loads the real host from the matching APK via DT_NEEDED.
     Set-Content -LiteralPath "$stage/host.c" -Value 'void scda_builder_stub(void) {}' -Encoding ASCII
-    & "$llvm/clang.exe" --target=aarch64-linux-android29 -fPIC -c "$stage/host.c" -o "$stage/host.o"
-    if ($LASTEXITCODE) { throw 'Compiling the host link stub failed.' }
-    & "$llvm/ld.lld.exe" -shared -soname libscda_host.so "$stage/host.o" -o "$stage/compiler/libscda_host.so"
-    if ($LASTEXITCODE) { throw 'Linking the host stub failed.' }
+    foreach ($abi in 'arm64-v8a', 'x86_64') {
+        $triple = if ($abi -eq 'arm64-v8a') { 'aarch64-linux-android29' } else { 'x86_64-linux-android29' }
+        $arch = if ($abi -eq 'arm64-v8a') { 'aarch64' } else { 'x86_64' }
+        New-Item -ItemType Directory -Force -Path "$stage/compiler/$abi" | Out-Null
+        & "$llvm/clang.exe" --target=$triple -fPIC -c "$stage/host.c" -o "$stage/host.o"
+        if ($LASTEXITCODE) { throw "Compiling the $abi host link stub failed." }
+        & "$llvm/ld.lld.exe" -shared -soname libscda_host.so "$stage/host.o" -o "$stage/compiler/$abi/libscda_host.so"
+        if ($LASTEXITCODE) { throw "Linking the $abi host stub failed." }
+        Copy-Item -LiteralPath "$ndk/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/21/lib/linux/$arch/libunwind.a" -Destination "$stage/compiler/$abi/libunwind.a"
+    }
     Remove-Item -LiteralPath "$stage/host.c", "$stage/host.o"
     foreach ($name in 'clang++.exe', 'ld.lld.exe', 'libwinpthread-1.dll', 'libxml2.dll') {
         Copy-Item -LiteralPath "$llvm/$name" -Destination "$stage/compiler/$name"
     }
-    Copy-Item -LiteralPath "$ndk/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/21/lib/linux/aarch64/libunwind.a" -Destination "$stage/compiler/libunwind.a"
     Copy-Item -LiteralPath "$cmake/bin/ninja.exe" -Destination "$stage/compiler/ninja.exe"
     foreach ($name in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
         Copy-Item -LiteralPath "$crt/$name" -Destination "$stage/compiler/$name"
@@ -71,7 +76,7 @@ try {
     $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     if (-not (Test-Path -LiteralPath $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe' }
     if (-not (Test-Path -LiteralPath $csc)) { throw 'Windows .NET Framework compiler (csc.exe) was not found.' }
-    $gui = Join-Path $stage 'SCDA-Android-ARM64-Builder.exe'
+    $gui = Join-Path $stage 'SCDA-Android-Builder.exe'
     $source = Join-Path $stage 'Builder.cs'
     $wpf = Join-Path (Split-Path $csc) 'WPF'
     & $csc /nologo /target:winexe /optimize+ /out:$gui `

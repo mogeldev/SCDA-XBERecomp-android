@@ -14,6 +14,10 @@ def check(apk, sdk):
                      'libSDL3.so', 'libmain.so', 'libc++_shared.so'):
             data = archive.read('lib/arm64-v8a/' + name)
             assert data[:6] == b'\x7fELF\x02\x01' and data[18:20] == b'\xb7\x00', name
+        for name in ('libscda_host.so', 'libSDL3.so', 'libmain.so', 'libc++_shared.so'):
+            data = archive.read('lib/x86_64/' + name)
+            assert data[:6] == b'\x7fELF\x02\x01' and data[18:20] == b'\x3e\x00', name
+        assert {n.split('/')[1] for n in names if n.startswith('lib/')} == {'arm64-v8a', 'x86_64'}
         assert len(archive.read('assets/compiler/version')) == 64
         for license in ('LLVM.txt', 'LGPL-2.1-only.txt', 'GPL-3.0-only.txt', 'GPL-2.0-only.txt', 'NCSA.txt',
                         'TOOLCHAIN-NOTICES.md', 'extract-xiso.txt', 'libarchive.txt', 'Zydis.txt', 'Zycore.txt', 'tomlplusplus.txt'):
@@ -24,7 +28,7 @@ def check(apk, sdk):
     metadata = subprocess.run([str(aapt), 'dump', 'badging', str(apk)], check=True, capture_output=True, text=True).stdout
     assert "package: name='io.github.mogeldev.scda'" in metadata
     assert "launchable-activity: name='io.github.mogeldev.scda.OnDeviceSetupActivity'" in metadata
-    print(f'PASS: production identity/launcher, ARM64 tools/runtime, notices, no game content/debug import hook ({apk.stat().st_size / 1048576:.1f} MiB)')
+    print(f'PASS: production identity/launcher, ARM64 tools + dual-ABI runtime, notices, no game content/debug import hook ({apk.stat().st_size / 1048576:.1f} MiB)')
 
 
 if __name__ == '__main__':

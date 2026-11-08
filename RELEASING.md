@@ -17,6 +17,7 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 - Promote RC to stable by copying the exact approved APK and matching builder/checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
 - **Debug keys only for Testing, RC and Stable.** Both Gradle debug and release variants explicitly use `signingConfigs.debug`; no separate production signing key is used. A release variant signed with a debug key is not necessarily a debuggable app.
 - Reuse and privately back up the same maintainer debug keystore (`~/.android/debug.keystore`) for published updates. Another machine's automatically generated debug key will differ: Android refuses an in-place update signed by a different certificate. Verify the certificate against the previous APK and publish its SHA-256 fingerprint. Never commit/upload the keystore or expose its private key; the standard debug credentials are not a security boundary. Do not recommend uninstalling an existing game just to bypass a signing mismatch, because that deletes app data.
+- **Every future release APK must include both `arm64-v8a` and `x86_64` runtime libraries.** Build without `-PdevCode`; never publish private game code/assets. Inspect the packaged ABIs before uploading. On-device compilation is ARM64-only; x86_64 uses the matching Windows builder's dual-ABI game ZIP; the importer selects the library for the app's process ABI. Do not replace older published APKs to add an ABI; publish a new version.
 - **The Windows builder follows the APK version.** `tools/android-builder/package.ps1` reads `versionName` from `android/build.gradle` and creates `SCDA-Android-<version>-Windows-Builder.zip`; the GUI shows that version. Build both from the same commit and publish them together under the same version. Every game ZIP carries `scda-version.txt`; the app refuses a prebuilt ZIP from another builder version (ZIPs from older unversioned builders are still accepted).
 - Creating a tag does not build, install, upload or approve binaries. Publishing and stable promotion are separate, manually approved actions. No automatic publishing on pushes/tags is configured.
 
@@ -24,7 +25,7 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 
 ### Testing
 
-Before uploading an APK: successful production build, host tests, APK identity/content inspection, basic launch check, signing validation and distribution-license/source requirements. Use the isolated setup app for destructive import/storage experiments; test production-package upgrades separately without clearing user data. Notes must distinguish isolated-app results from production APK validation.
+Before uploading an APK: successful production build containing both ARM64 and x86_64 runtimes, host tests, APK identity/content inspection (including both ABIs and absence of embedded game code), basic launch check, signing validation and distribution-license/source requirements. Use the isolated setup app for destructive import/storage experiments; test production-package upgrades separately without clearing user data. Notes must distinguish isolated-app results from production APK validation.
 
 A **source-only prerelease checkpoint** is allowed while update-certificate validation or distribution gates remain unresolved. Label it explicitly: no installable build, no claim of binary-release readiness. GitHub source archives must not contain private game files or generated code.
 
@@ -71,5 +72,9 @@ Android `0.1.0-testing.4` / code 6, same debug certificate. Adds on-screen touch
 ## Published testing version: 0.1.0-testing.5
 
 Android `0.1.0-testing.5` / code 7, same debug certificate. Adds experimental Android 10 / API 29 support, including compiler/import-tool targets and a linked game-code unwinder, and an automatic shader-compiler workaround limited to ARM Mali-G51 driver `0x04800000` (r18p0). Other GPUs/drivers retain the original rendering path. Full first-run tablet compilation, game launch, gameplay and good-looking visuals were user-confirmed on Huawei AGS3K / Mali-G51; the same experimental build was user-tested on Android 16 / Adreno 710 with no apparent regressions. Assets: APK, matching Windows builder, corresponding source/notices and SHA-256 sums. Extended stability, broader import formats, other Mali drivers and 16-KiB devices remain open; this is not an RC or stable release.
+
+## Published testing version: 0.1.0-testing.6
+
+Android `0.1.0-testing.6` / code 8, same debug certificate. The release APK includes ARM64 and x86_64 runtimes. The matching Windows builder compiles both ABIs into one private game ZIP; import selects the device's library and normalizes it to the existing installed layout, retaining legacy single-library ZIP support. On-device compilation remains ARM64-only. Android 10 and the driver-specific Mali-G51 workaround remain experimental. Assets: dual-ABI APK, matching builder, corresponding source and SHA-256 sums. testing.5 assets remain unchanged.
 
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

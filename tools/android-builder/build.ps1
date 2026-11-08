@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 
 try {
     $compiler = Join-Path $PSScriptRoot 'compiler'
-    foreach ($name in 'xbe_recomp.exe', 'clang++.exe', 'ld.lld.exe', 'ninja.exe', 'libscda_host.so', 'xbe.sha1') {
+    foreach ($name in 'xbe_recomp.exe', 'clang++.exe', 'ld.lld.exe', 'ninja.exe', 'arm64-v8a/libscda_host.so', 'x86_64/libscda_host.so', 'arm64-v8a/libunwind.a', 'x86_64/libunwind.a', 'xbe.sha1') {
         if (-not (Test-Path -LiteralPath (Join-Path $compiler $name))) {
             throw "Missing compiler/$name. Extract the complete matching builder package before running the GUI."
         }
@@ -41,7 +41,6 @@ try {
         }
         $sources = @('x86_func_mapping.cpp') + @(0..127 | ForEach-Object { "x86_recomp.$_.cpp" })
         $generated = @($sources | ForEach-Object { "generated/$_" }) + 'generated/x86_recomp_shared.h'
-        $objects = @($sources | ForEach-Object { "obj/$_.o" })
         $dependencies = @('../compiler/xbe_recomp.exe', '../compiler/config/scda_v2.toml', '../compiler/config/xdk_symbols.toml')
         $headers = @(Get-ChildItem -LiteralPath (Join-Path $compiler 'include') -Recurse -File | ForEach-Object {
             NinjaPath ('../compiler/include/' + $_.FullName.Substring((Join-Path $compiler 'include').Length + 1))
@@ -52,29 +51,43 @@ try {
             '  command = "../compiler/xbe_recomp.exe" "../compiler/config/scda_v2.toml" "$in_xbe" generated',
             '  description = Translating default.xbe',
             'rule compile',
-            '  command = "../compiler/clang++.exe" --target=aarch64-linux-android29 -std=c++20 -O2 -fPIC -funwind-tables -fstack-protector-strong -fno-strict-aliasing -mno-outline-atomics -DX86_GAME_CODE -nostdinc -nostdinc++ -w -I../compiler/include -Igenerated -isystem ../compiler/include/freestanding -c $in -o $out',
+            '  command = "../compiler/clang++.exe" --target=$triple -std=c++20 -O2 -fPIC -funwind-tables -fstack-protector-strong -fno-strict-aliasing $archflags -DX86_GAME_CODE -nostdinc -nostdinc++ -w -I../compiler/include -Igenerated -isystem ../compiler/include/freestanding -c $in -o $out',
             '  description = Compiling $in',
             'rule link',
-            '  command = "../compiler/ld.lld.exe" -shared -soname libscda_code.so -z max-page-size=16384 -z now -z relro --hash-style=gnu --eh-frame-hdr --no-as-needed ../compiler/libscda_host.so @$out.rsp ../compiler/libunwind.a -o $out',
+            '  command = "../compiler/ld.lld.exe" -shared -soname libscda_code.so -z max-page-size=16384 -z now -z relro --hash-style=gnu --eh-frame-hdr --no-as-needed ../compiler/$abi/libscda_host.so @$out.rsp ../compiler/$abi/libunwind.a -o $out',
             '  rspfile = $out.rsp',
             '  rspfile_content = $in',
             '  description = Linking libscda_code.so',
             "build $($generated -join ' '): translate $(NinjaPath $Xbe) | $($dependencies -join ' ')",
             ('  in_xbe = ' + $Xbe.Replace('\', '/').Replace('$', '$$'))
         )
-        for ($i = 0; $i -lt $sources.Count; $i++) {
-            $lines += "build $($objects[$i]): compile generated/$($sources[$i]) | generated/x86_recomp_shared.h ../compiler/clang++.exe $($headers -join ' ')"
+        $outputs = @()
+        foreach ($abi in 'arm64-v8a', 'x86_64') {
+            $triple = if ($abi -eq 'arm64-v8a') { 'aarch64-linux-android29' } else { 'x86_64-linux-android29' }
+            $archflags = if ($abi -eq 'arm64-v8a') { '-mno-outline-atomics' } else { '' }
+            New-Item -ItemType Directory -Force -Path "$work/obj/$abi", "$work/lib/$abi" | Out-Null
+            $objects = @($sources | ForEach-Object { "obj/$abi/$_.o" })
+            for ($i = 0; $i -lt $sources.Count; $i++) {
+                $lines += "build $($objects[$i]): compile generated/$($sources[$i]) | generated/x86_recomp_shared.h ../compiler/clang++.exe $($headers -join ' ')"
+                $lines += "  triple = $triple", "  archflags = $archflags"
+            }
+            $output = "lib/$abi/libscda_code.so"
+            $outputs += $output
+            $lines += "build ${output}: link $($objects -join ' ') | ../compiler/ld.lld.exe ../compiler/$abi/libscda_host.so ../compiler/$abi/libunwind.a"
+            $lines += "  abi = $abi"
         }
-        $lines += "build libscda_code.so: link $($objects -join ' ') | ../compiler/ld.lld.exe ../compiler/libscda_host.so ../compiler/libunwind.a"
         [IO.File]::WriteAllLines((Join-Path $work 'build.ninja'), $lines, [Text.UTF8Encoding]::new($false))
         Push-Location $work
         try {
-            & '../compiler/ninja.exe' -j $Jobs libscda_code.so
+            & '../compiler/ninja.exe' -j $Jobs @outputs
             if ($LASTEXITCODE) { throw 'Build failed. Fix the error above and run again; completed objects are kept.' }
         } finally { Pop-Location }
-        Copy-Item -LiteralPath (Join-Path $work 'libscda_code.so') -Destination (Join-Path $PSScriptRoot 'libscda_code.so') -Force
+        foreach ($abi in 'arm64-v8a', 'x86_64') {
+            New-Item -ItemType Directory -Force -Path "$PSScriptRoot/lib/$abi" | Out-Null
+            Copy-Item -LiteralPath "$work/lib/$abi/libscda_code.so" -Destination "$PSScriptRoot/lib/$abi/libscda_code.so" -Force
+        }
     } finally { $lock.Dispose() }
-    Write-Host "`nReady: $(Join-Path $PSScriptRoot 'libscda_code.so')"
+    Write-Host "`nReady: $(Join-Path $PSScriptRoot 'lib') (ARM64 + x86_64)"
     Write-Host 'Game-code compilation complete.'
 } catch {
     Write-Host "`nERROR: $($_.Exception.Message)" -ForegroundColor Red

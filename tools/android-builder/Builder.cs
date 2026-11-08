@@ -123,10 +123,10 @@ internal static class Builder
                     assets = extracted;
                     ValidatePaths(assets, output);
                 }
-                log("Building Android ARM64 game code...");
+                log("Building Android ARM64 + x86_64 game code...");
                 RunScript(tools, "build.ps1", log, "-Xbe", Path.Combine(assets, "default.xbe"));
                 log("Creating import ZIP. This can take several minutes...");
-                RunScript(tools, "package-game.ps1", log, "-Assets", assets, "-Library", Path.Combine(tools, "libscda_code.so"),
+                RunScript(tools, "package-game.ps1", log, "-Assets", assets, "-Library", Path.Combine(tools, "lib"),
                     "-Output", output);
                 log("Ready: " + output);
             }
@@ -221,7 +221,7 @@ internal sealed class BuilderWindow : Window
     internal BuilderWindow()
     {
         string version = Version(toolsDirectory);
-        Title = "SCDA Android ARM64 Builder " + version;
+        Title = "SCDA Android Builder " + version;
         Width = 980;
         Height = 760;
         MinWidth = 760;
@@ -254,7 +254,7 @@ internal sealed class BuilderWindow : Window
         Content = layout;
 
         StackPanel header = new StackPanel { Margin = new Thickness(0, 0, 0, 24) };
-        header.Children.Add(new TextBlock { Text = "SCDA  /  ANDROID ARM64  /  " + version.ToUpperInvariant(), FontSize = 12,
+        header.Children.Add(new TextBlock { Text = "SCDA  /  ANDROID ARM64 + X86_64  /  " + version.ToUpperInvariant(), FontSize = 12,
             FontWeight = FontWeights.SemiBold, Foreground = Brush("#69E2BB") });
         header.Children.Add(new TextBlock { Text = "Prepare your game", FontSize = 30,
             FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 5, 0, 8) });
@@ -443,7 +443,7 @@ internal sealed class BuilderWindow : Window
     {
         if (!busy) return;
         if (line.Contains("Extracting original Xbox ISO")) { phase.Text = "01 / Extracting disc image"; detail.Text = "Reading the ISO. The source image is not modified."; progress.IsIndeterminate = true; }
-        else if (line.Contains("Building Android ARM64")) { phase.Text = "02 / Compiling for Android ARM64"; detail.Text = "Completed objects are reused on retry."; progress.IsIndeterminate = true; }
+        else if (line.Contains("Building Android ARM64")) { phase.Text = "02 / Compiling for Android ARM64 + x86_64"; detail.Text = "Completed objects are reused on retry."; progress.IsIndeterminate = true; }
         else if (line.Contains("Creating import ZIP")) { phase.Text = "03 / Packaging your import ZIP"; detail.Text = "This may take a while for a full game dump."; progress.IsIndeterminate = true; }
         else if (line.StartsWith("ZIP:")) { detail.Text = line.Substring(4).Trim(); }
         else
