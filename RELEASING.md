@@ -87,4 +87,8 @@ Android `0.2.0-testing.1` / code 10, same debug certificate; prerelease, not Lat
 
 Corresponding source now also includes the full pinned Mesa, Vauzi recipe/patch, adrenotools, linkernsbypass and volk archives plus project source. See `tools/turnip/SOURCES.md`: upstream binary revision is checked, not independently reproduced byte-for-byte. Never reuse the old source-bundle script without these additions. Turnip and Android 10 remain experimental; previous tags/assets stay unchanged.
 
+## Published testing version: 0.2.0-testing.2
+
+Android `0.2.0-testing.2` / code 11, same debug certificate; prerelease, not Latest. Adds the manual **Share device report** launcher entry: preview, then Android share sheet or an editable GitHub issue draft. No upload client or background transmission. The report holds app/device/Android/ABI data, driver selection, Turnip eligibility and the last successful Vulkan-device initialization snapshot (ignored if older than the installed app). No identifiers, accounts, paths, logs or game files. Emulator-checked; not yet checked on physical hardware. Toolchain/Turnip sources unchanged from 0.2.0-testing.1; the source bundle is rebuilt with the new project source.
+
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

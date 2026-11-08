@@ -1125,6 +1125,19 @@ bool VulkanBackend::CreateDevice() {
          VK_API_VERSION_MAJOR(props_.apiVersion), VK_API_VERSION_MINOR(props_.apiVersion), props_.driverVersion,
          bc_ ? "yes" : "no (decoded)", depth_fmt_ == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
          depth_linear_ ? " filtered" : " unfiltered", custom_border_ ? "exact" : "nearest");
+    // Minimal local snapshot for a user-reviewed report; never collect logs or device identifiers.
+    const auto report = std::filesystem::path(SDL_GetAndroidInternalStoragePath()) / "last-vulkan-report.txt";
+    const auto temporary = report.string() + ".tmp";
+    {
+        std::ofstream f(temporary);
+        f << "GPU: " << props_.deviceName << '\n'
+          << "Vulkan: " << VK_API_VERSION_MAJOR(props_.apiVersion) << '.' << VK_API_VERSION_MINOR(props_.apiVersion)
+          << '.' << VK_API_VERSION_PATCH(props_.apiVersion) << '\n'
+          << "Driver version (raw): " << props_.driverVersion << '\n'
+          << "Loaded driver: " << (android_driver::IsTurnip() ? "Turnip universal v4.5" : "Manufacturer") << '\n';
+        f.close();
+        if (f) { std::error_code ec; std::filesystem::rename(temporary, report, ec); }
+    }
     return true;
 }
 

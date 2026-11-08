@@ -19,7 +19,7 @@ import android.widget.TextView;
 // Native, landscape menu. Retains Android focus/accessibility and real importer progress; no WebView/game art.
 final class SetupView extends LinearLayout {
     static final int TEXT = 0xffc9cdc8, DIM = 0xffa2aaa0, GREEN = 0xffa9c2a2;
-    final Button select, folder, cancel, play, update, driver;
+    final Button select, folder, cancel, play, update, driver, report;
     final ProgressBar progress;
     final TextView status, percent;
     private final TextView heading, subheading, stage, version;
@@ -75,6 +75,8 @@ final class SetupView extends LinearLayout {
         Button notice = button("Licenses");
         notice.setOnClickListener(v -> licenses.run());
         home.addView(notice);
+        report = button("Share device report");
+        home.addView(report);
         work = column();
         work.setPadding(dp(16), dp(12), dp(16), dp(12));
         work.setBackground(gradient(0xff202220, 0xff080908));

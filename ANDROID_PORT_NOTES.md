@@ -1,6 +1,6 @@
 # SCDA Android port: notes
 
-Current release: 0.2.0-testing.1. Optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.2.0-testing.2 (adds the manual Share device report; see `android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
 
 ## 0.2.0-testing.1 validation
 

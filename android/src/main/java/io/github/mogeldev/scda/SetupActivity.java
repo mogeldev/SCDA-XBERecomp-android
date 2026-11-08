@@ -46,6 +46,7 @@ public class SetupActivity extends Activity {
         setup = new SetupView(this, supportsLocalCompilation(), this::showRequirements, this::showImportLicenses, this::cancelSetup);
         setup.version(GameImport.appVersion != null ? GameImport.appVersion : "unknown version");
         DriverChoice.attach(setup.driver);
+        setup.report.setOnClickListener(view -> DeviceReport.show(this));
         setup.update.setOnClickListener(view -> checkUpdates());
         setup.play.setOnClickListener(view -> launchGame());
         select = setup.select;
