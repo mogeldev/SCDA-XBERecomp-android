@@ -148,7 +148,10 @@ final class SetupView extends ScrollView {
 
     boolean isWorkPageVisible() { return workPage.getVisibility() == VISIBLE; }
 
-    void version(String name) { brand.setText("● ● ●   THIRD ECHELON / ANDROID   ·   " + name); }
+    void version(String name) {
+        brand.setText("● ● ●   THIRD ECHELON / ANDROID   ·   " + name
+            + (android.os.Build.VERSION.SDK_INT == 29 ? "   ·   ANDROID 10 — EXPERIMENTAL" : ""));
+    }
 
     // Launcher page for an installed game: Play instead of the import choices.
     void showReady() {

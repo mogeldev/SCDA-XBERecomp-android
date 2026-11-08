@@ -98,7 +98,7 @@ if(ANDROID)
         if(ANDROID_ABI STREQUAL "arm64-v8a")
             target_compile_options(scda_code PRIVATE -mno-outline-atomics)
         endif()
-        target_link_libraries(scda_code PRIVATE scda_host)
+        target_link_libraries(scda_code PRIVATE scda_host unwind)
         # the C and C++ runtimes come with the host, as for the player's build
         target_link_options(scda_code PRIVATE -nostdlib -Wl,-z,undefs)
 

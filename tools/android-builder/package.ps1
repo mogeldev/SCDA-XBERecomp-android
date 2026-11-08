@@ -29,7 +29,7 @@ try {
     Copy-Item -LiteralPath $Recompiler -Destination "$stage/compiler/xbe_recomp.exe"
     # Link-only stub: the phone loads the real host from the matching APK via DT_NEEDED.
     Set-Content -LiteralPath "$stage/host.c" -Value 'void scda_builder_stub(void) {}' -Encoding ASCII
-    & "$llvm/clang.exe" --target=aarch64-linux-android30 -fPIC -c "$stage/host.c" -o "$stage/host.o"
+    & "$llvm/clang.exe" --target=aarch64-linux-android29 -fPIC -c "$stage/host.c" -o "$stage/host.o"
     if ($LASTEXITCODE) { throw 'Compiling the host link stub failed.' }
     & "$llvm/ld.lld.exe" -shared -soname libscda_host.so "$stage/host.o" -o "$stage/compiler/libscda_host.so"
     if ($LASTEXITCODE) { throw 'Linking the host stub failed.' }
@@ -37,6 +37,7 @@ try {
     foreach ($name in 'clang++.exe', 'ld.lld.exe', 'libwinpthread-1.dll', 'libxml2.dll') {
         Copy-Item -LiteralPath "$llvm/$name" -Destination "$stage/compiler/$name"
     }
+    Copy-Item -LiteralPath "$ndk/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/21/lib/linux/aarch64/libunwind.a" -Destination "$stage/compiler/libunwind.a"
     Copy-Item -LiteralPath "$cmake/bin/ninja.exe" -Destination "$stage/compiler/ninja.exe"
     foreach ($name in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
         Copy-Item -LiteralPath "$crt/$name" -Destination "$stage/compiler/$name"

@@ -137,6 +137,7 @@ try {
         Assert ($symbols -match "GLOBAL\s+DEFAULT\s+\d+\s+$symbol\b") "Missing export: $symbol"
     }
     Assert ($symbols -notmatch 'UND\s+__aarch64_') 'Outlined atomic helpers are unresolved.'
+    Assert ($symbols -notmatch 'UND\s+_Unwind_Resume\b') 'Android 10 requires the game unwinder to be linked in.'
     Assert ($symbols -match 'UND\s+__gxx_personality_v0') 'Expected shared exception runtime import missing.'
     $built = (Get-Item -LiteralPath "$root/work/libscda_code.so").LastWriteTimeUtc
     $again = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/build.ps1" -Jobs 8

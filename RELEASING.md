@@ -68,4 +68,8 @@ Android `0.1.0-testing.3` / code 5, same debug certificate. First release with t
 
 Android `0.1.0-testing.4` / code 6, same debug certificate. Adds on-screen touch controls (shown while no controller is connected; CONTROLLER page: TOUCH CONTROLS AUTOMATIC/ON/OFF and opacity) and the app icon. Assets: APK, builder, corresponding source (toolchain libraries unchanged from testing.3) and SHA-256 sums. Touch controls and the icon were confirmed on the Adreno 710 phone; the full builder smoke test passed. Same open items as testing.2.
 
+## Published testing version: 0.1.0-testing.5
+
+Android `0.1.0-testing.5` / code 7, same debug certificate. Adds experimental Android 10 / API 29 support, including compiler/import-tool targets and a linked game-code unwinder, and an automatic shader-compiler workaround limited to ARM Mali-G51 driver `0x04800000` (r18p0). Other GPUs/drivers retain the original rendering path. Full first-run tablet compilation, game launch, gameplay and good-looking visuals were user-confirmed on Huawei AGS3K / Mali-G51; the same experimental build was user-tested on Android 16 / Adreno 710 with no apparent regressions. Assets: APK, matching Windows builder, corresponding source/notices and SHA-256 sums. Extended stability, broader import formats, other Mali drivers and 16-KiB devices remain open; this is not an RC or stable release.
+
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

@@ -28,7 +28,7 @@ def stage(sdk, work, host_apk=None):
         subprocess.run([str(cmake), '-S', str(source), '-B', str(native), '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_MAKE_PROGRAM={sdk}/cmake/3.31.6/bin/ninja.exe',
             f'-DCMAKE_TOOLCHAIN_FILE={sdk}/ndk/29.0.14206865/build/cmake/android.toolchain.cmake',
-            '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-30', '-DANDROID_STL=' + stl], check=True)
+            '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-29', '-DANDROID_STL=' + stl], check=True)
         subprocess.run([str(cmake), '--build', str(native), *targets, '--parallel', '4'], check=True)
     dest = work / 'jniLibs/arm64-v8a'
     if dest.exists(): shutil.rmtree(dest)
@@ -50,6 +50,10 @@ def stage(sdk, work, host_apk=None):
     assets = work / 'assets'
     if assets.exists(): shutil.rmtree(assets)
     compiler = assets / 'compiler'
+    compiler.mkdir(parents=True)
+    # Game libraries need their own unwinder on Android 10 (no system _Unwind_Resume).
+    shutil.copy2(sdk / 'ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/21/lib/linux/aarch64/libunwind.a',
+                 compiler / 'libunwind.a')
     for name in ('scda_v2.toml', 'xdk_symbols.toml'):
         path = compiler / 'input/config' / name
         path.parent.mkdir(parents=True, exist_ok=True)

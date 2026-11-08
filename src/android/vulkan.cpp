@@ -903,6 +903,7 @@ private:
     }
     bool descriptor_cache_ = true;
     bool skip_unused_stages_ = true;
+    bool screen_linear_workaround_ = false;
     bool timing_pass_ = false;
     bool trace_passes_ = false;
     uint32_t trace_draws_ = 0;
@@ -1040,6 +1041,8 @@ bool VulkanBackend::CreateDevice() {
         return false;
     }
     vkGetPhysicalDeviceProperties(gpu_, &props_);
+    screen_linear_workaround_ = NeedsScreenLinearWorkaround(props_.vendorID, props_.deviceName, props_.driverVersion);
+    if (screen_linear_workaround_) LOGI("vulkan: experimental Mali-G51 r18p0 screen-linear interpolation workaround");
     vkGetPhysicalDeviceMemoryProperties(gpu_, &mem_props_);
     ubo_align_ = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
 
@@ -2119,7 +2122,7 @@ void VulkanBackend::ReleaseOldTextures() {
 
 // SPIR-V from HLSL, from the disk cache when it was made before; null when it fails to compile
 VkShaderModule VulkanBackend::Module(const std::string& hlsl, EShLanguage stage, const char* entry) {
-    std::string text = ForGlslang(hlsl);
+    std::string text = ForGlslang(screen_linear_workaround_ ? VulkanScreenLinearHlsl(hlsl) : hlsl);
     uint64_t hash = Hash(text.data(), text.size(), Hash(entry, std::strlen(entry), uint64_t(stage)));
     auto it = modules_.find(hash);
     if (it != modules_.end()) return it->second;

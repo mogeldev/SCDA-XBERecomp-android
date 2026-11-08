@@ -62,13 +62,17 @@ public class SetupActivity extends Activity {
         }
         if (pendingBuild(files)) setup.phase("02  COMPILE / RESUME");
         // Keep content inside system bars/cutouts before applying the 80% width limit.
-        getWindow().setDecorFitsSystemWindows(false);
-        setup.setOnApplyWindowInsetsListener((view, insets) -> {
-            android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
-                | android.view.WindowInsets.Type.displayCutout());
-            view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
-            return insets;
-        });
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            setup.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
+                    | android.view.WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+                return insets;
+            });
+        } else {
+            setup.setFitsSystemWindows(true);
+        }
         setContentView(setup);
         setup.requestApplyInsets();
         picking = state != null && state.getBoolean("picking");

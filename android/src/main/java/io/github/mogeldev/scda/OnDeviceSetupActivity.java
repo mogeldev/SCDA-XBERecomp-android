@@ -162,7 +162,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
         if (CompileCache.valid(output)) { elf(output, 1); return; }
         Files.deleteIfExists(output.resolveSibling(output.getFileName() + ".sha256"));
         Path temporary = output.resolveSibling(output.getFileName() + ".tmp");
-        command(work, "clang", "-cc1", "-triple", "aarch64-linux-android30", "-emit-obj", "-std=c++20", "-O2",
+        command(work, "clang", "-cc1", "-triple", "aarch64-linux-android29", "-emit-obj", "-std=c++20", "-O2",
             "-mrelocation-model", "pic", "-pic-level", "2", "-funwind-tables=2", "-relaxed-aliasing",
             "-fcxx-exceptions", "-fexceptions", "-stack-protector", "2", "-target-feature", "+neon",
             "-target-feature", "-outline-atomics", "-DX86_GAME_CODE", "-nostdsysteminc", "-nobuiltininc", "-w",
@@ -215,6 +215,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
                     throw new IOException("Free at least 512 MiB for compilation and 64 MiB for the library");
                 progress.update("Preparing compiler inputs…", -1);
                 copyAssets("compiler/input", work.resolve("input"));
+                copyAssets("compiler/libunwind.a", work.resolve("libunwind.a"));
                 Files.copy(xbe, work.resolve("input/default.xbe"), StandardCopyOption.REPLACE_EXISTING);
                 Path generated = work.resolve("generated");
                 Path translated = work.resolve("translated");
@@ -300,7 +301,7 @@ public class OnDeviceSetupActivity extends SetupActivity {
                 Path library = work.resolve("libscda_code.so");
                 command(work, "lld", "-flavor", "gnu", "-shared", "-soname", "libscda_code.so", "-z", "max-page-size=16384",
                     "-z", "now", "-z", "relro", "--hash-style=gnu", "--eh-frame-hdr", "--no-as-needed",
-                    nativeDir.resolve("libscda_host.so").toString(), "@objects.rsp", "-o", library.toString());
+                    nativeDir.resolve("libscda_host.so").toString(), "@objects.rsp", "libunwind.a", "-o", library.toString());
                 elf(library, 3);
                 progress.update("Checking runtime symbols and dispatch tables…", -1);
                 command(work, "load", library.toString());

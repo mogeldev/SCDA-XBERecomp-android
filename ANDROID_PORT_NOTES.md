@@ -12,7 +12,8 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 - The game code is recompiled on the player's Windows PC into `libscda_code.so`. Players put it and the extracted campaign files into one ZIP; Android imports that ZIP on first boot through the system file picker. `tools/android-builder/` provides the self-contained Windows builder package.
 - Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor, GitHub Actions release packaging. Build and package locally.
 - Windows/desktop game builds (D3D12 renderer, desktop menus) are out of scope and not maintained. Shared code may break them; do not build or test them. The Windows player builder (`tools/android-builder/`) stays in scope.
-- minSdk 30.
+- minSdk 29; **Android 10 support is experimental** (launcher window-inset fallback, guest-memory `memfd_create` syscall, API 29 compiler/import tools and a statically linked game-code unwinder).
+- Huawei AGS3K / Mali-G51 on Android 10: gameplay user-confirmed. Automatic shader workaround only for ARM vendor `0x13B5`, device name `Mali-G51`, driver `0x04800000` (r18p0): reconstruct screen-linear interpolation without `NoPerspective`, which crashes this driver's pipeline compiler. Source-specific shader cache hashes keep both variants separate. Other GPUs/drivers retain the original path. Full first-run tablet compilation → game launch → gameplay and good-looking visuals were user-confirmed, as was the Android 16 phone with no apparent regressions. Packaged compiler/linker and Windows-built library runtime checks also passed on Android 10. Longer-term visual/stability checks and broader import-format coverage remain open.
 
 ## Phases
 
@@ -22,14 +23,14 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 | 1 Platform layer | done |
 | 2 Game code as ELF .so | done; Windows Android-ARM64 player builder implemented and tested |
 | 3 Vulkan backend | first version done |
-| 4 ARM64 phone | runs on Adreno 710 at 60 fps; Mali untested |
+| 4 ARM64 devices | runs on Adreno 710; experimental Android 10 / Mali-G51 gameplay confirmed, other Mali drivers untested |
 | 5 Release | Local builds/packaging only; GitHub Actions not required |
 
 Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunch, 8344e24 pad bridge, 405cc4e Vulkan renderer, c38a742 runs on the phone, 94f4cfc late readbacks / border colours / unfiltered depth, 9a7852e 50% render default and -O2 host.
 
 ## Next session, in this order
 
-1. Test on a Mali device, if one can be found. This also tests the CPU BC decode path.
+1. Extend Mali-G51 gameplay/visual testing (including CPU BC decoding), Android 10 import-format coverage, and coverage of other Mali GPUs/drivers.
 
 ## Architecture
 

@@ -282,6 +282,19 @@ static void CompileVertex(const std::string& text) {
 }
 
 static void ShaderTest() {
+    assert(gpu::NeedsScreenLinearWorkaround(0x13B5, "Mali-G51", 0x04800000));
+    assert(!gpu::NeedsScreenLinearWorkaround(0x13B5, "Mali-G51", 0x05000000));
+    assert(!gpu::NeedsScreenLinearWorkaround(0x13B5, "Mali-G76", 0x04800000));
+    assert(!gpu::NeedsScreenLinearWorkaround(0x5143, "Adreno (TM) 710", 0x04800000));
+    // Perspective interpolation of e*w, multiplied by interpolated 1/w, equals screen-linear e.
+    const double weights[] = {0.2, 0.3, 0.5}, clip_w[] = {0.5, 2.0, 4.0}, values[] = {2.0, -3.0, 7.0};
+    double reciprocal_w = 0, numerator = 0, expected = 0;
+    for (int i = 0; i < 3; ++i) {
+        reciprocal_w += weights[i] / clip_w[i];
+        numerator += weights[i] * (values[i] * clip_w[i]) / clip_w[i];
+        expected += weights[i] * values[i];
+    }
+    assert(std::abs((numerator / reciprocal_w) * reciprocal_w - expected) < 1e-12);
     glslang::InitializeProcess();
     for (bool pre : {false, true}) for (bool vertex : {false, true}) for (bool large : {false, true}) {
         auto original = gpu::FixedVertexHlsl(uint16_t(1 | (vertex ? 1 << 6 : 0)), pre);
@@ -291,6 +304,10 @@ static void ShaderTest() {
         // Same INF conversion as the renderer; no input-location conversion needed for this check.
         for (size_t p; (p = src.find("1.#INF")) != std::string::npos;) src.replace(p, 6, "asfloat(0x7F800000)");
         CompileVertex(src); CompileVertex(gpu::QuadHlsl(src));
+        auto linear = gpu::VulkanScreenLinearHlsl(gpu::QuadHlsl(src));
+        assert(linear.find("noperspective") == std::string::npos);
+        assert(linear.find("o.e *= o.pos.w;") != std::string::npos);
+        CompileVertex(linear);
     }
     auto src = gpu::VulkanVertexHlsl(gpu::VertexProgramHlsl({}, 1), true, false, true);
     assert(src.find("clamp(oPts.x") != std::string::npos);
@@ -310,6 +327,10 @@ static void ShaderTest() {
         auto text = gpu::PixelHlsl(key);
         assert(text.find("shadow(Texture") == std::string::npos);
         assert(text.find("spreadtap(Texture") == std::string::npos);
+        auto linear = gpu::VulkanScreenLinearHlsl(text);
+        assert(linear.find("noperspective") == std::string::npos);
+        assert((linear.find("i.e *= i.pos.w;") != std::string::npos) == quad);
+        CompileShader(linear, EShLangFragment);
         auto spv = CompileShader(text, EShLangFragment);
         std::map<uint32_t, bool> opaque;
         std::map<uint32_t, uint32_t> value_type;

@@ -19,6 +19,23 @@ class ProductionSetupTest(unittest.TestCase):
         self.assertIn("dependsOn(stageOnDeviceTools)", gradle)
         self.assertIn('../out/android-tools/jniLibs', gradle)
 
+    def test_experimental_android10_wiring(self):
+        self.assertIn('minSdk = 29', (ROOT / 'android/build.gradle').read_text())
+        setup = (JAVA / 'SetupActivity.java').read_text()
+        self.assertIn('Build.VERSION.SDK_INT >= 30', setup)
+        self.assertIn('setup.setFitsSystemWindows(true)', setup)
+        self.assertIn('ANDROID 10 — EXPERIMENTAL', (JAVA / 'SetupView.java').read_text(encoding='utf-8'))
+        local = (JAVA / 'OnDeviceSetupActivity.java').read_text()
+        self.assertIn('aarch64-linux-android29', local)
+        self.assertIn('copyAssets("compiler/libunwind.a"', local)
+        self.assertIn('"@objects.rsp", "libunwind.a"', local)
+        for file in ('tools/on-device-setup/build.py', 'tools/on-device-setup/import_tools.py'):
+            self.assertIn('-DANDROID_PLATFORM=android-29', (ROOT / file).read_text())
+        builder = (ROOT / 'tools/android-builder/build.ps1').read_text()
+        self.assertIn('aarch64-linux-android29', builder)
+        self.assertIn('@$out.rsp ../compiler/libunwind.a', builder)
+        self.assertIn('compiler/libunwind.a', (ROOT / 'tools/android-builder/package.ps1').read_text())
+
     def test_debug_only_signing_for_both_variants(self):
         gradle = (ROOT / 'android/build.gradle').read_text()
         self.assertIn('debug { signingConfig = signingConfigs.debug }', gradle)

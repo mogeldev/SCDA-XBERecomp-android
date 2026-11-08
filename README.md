@@ -8,7 +8,7 @@ Unofficial **original Xbox → Android ARM64** port using static recompilation, 
 
 ## Requirements
 
-- Android 11+, ARM64, Vulkan 1.1 and an SDL-compatible controller.
+- Android 10+, ARM64 and Vulkan 1.1. **Android 10 support is experimental.** Use touch controls or an SDL-compatible controller.
 - **Supported game build:** Redump-verified original Xbox release **Tom Clancy's Splinter Cell - Double Agent (USA, Europe) (En,Fr,De,Es,It)**. Redump ISO checksums: CRC-32 `DF53C218`, MD5 `06161188422B4D2EAB54D30F3158E0AA`, SHA-1 `83D68B38A8514B6D2580EA0F57487CD575EDD4B7`. A compatible XISO made from this disc is also supported. The extracted `default.xbe` must have SHA-1 `91290baf93c2f6ae735a3106c48734665c826d84`; provide it with `Default/` and `Media/`. Other builds, the PC version and Xbox 360 version are unsupported.
 - Roughly **3.5 GB for assets**, plus input/extraction space and at least **512 MiB for compilation**.
 
@@ -23,9 +23,9 @@ The app opens as a launcher (Play, Check for updates). **Check for updates** ask
 
 ## Status
 
-**Testing → RC → Stable**, starting at **0.1.0**; debug signing only. The [current prerelease](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) is **0.1.0-testing.2** with an ARM64 APK download.
+**Testing → RC → Stable**, starting at **0.1.0**; debug signing only. The [current prerelease](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) is **0.1.0-testing.5** with an ARM64 APK download, including experimental Android 10 support and the automatic Mali-G51 workaround.
 
-ISO → on-device compilation → gameplay confirmed on Redmi Note 13 Pro 5G / Adreno 710. Toolchain corresponding-source and licensing requirements are complete for this testing build. Production-package upgrade/picker tests, low-storage stress and 16-KiB device coverage remain open; Mali is untested.
+ISO → on-device compilation → gameplay confirmed on Redmi Note 13 Pro 5G / Adreno 710. **Experimental:** Full first-run on-device compilation, game launch and gameplay with good-looking visuals were user-confirmed on Huawei AGS3K / Mali-G51 (Android 10). The same build was user-tested on the Android 16 / Adreno 710 phone without apparent regressions. A shader-compiler workaround is enabled only for the tested ARM Mali-G51 driver (`0x04800000`, r18p0); other Mali GPUs/drivers are unchanged. Toolchain corresponding-source and licensing requirements are complete for this testing build. Production-package upgrade/picker tests, low-storage stress and 16-KiB device coverage remain open; other Mali GPUs/drivers are untested.
 
 [Build](android/BUILDING.md) · [Tests](android/tests/README.md) · [Validation](tools/on-device-setup/README.md) · [Port notes](ANDROID_PORT_NOTES.md) · [Release policy](RELEASING.md)
 

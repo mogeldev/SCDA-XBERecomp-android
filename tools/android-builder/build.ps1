@@ -52,10 +52,10 @@ try {
             '  command = "../compiler/xbe_recomp.exe" "../compiler/config/scda_v2.toml" "$in_xbe" generated',
             '  description = Translating default.xbe',
             'rule compile',
-            '  command = "../compiler/clang++.exe" --target=aarch64-linux-android30 -std=c++20 -O2 -fPIC -funwind-tables -fstack-protector-strong -fno-strict-aliasing -mno-outline-atomics -DX86_GAME_CODE -nostdinc -nostdinc++ -w -I../compiler/include -Igenerated -isystem ../compiler/include/freestanding -c $in -o $out',
+            '  command = "../compiler/clang++.exe" --target=aarch64-linux-android29 -std=c++20 -O2 -fPIC -funwind-tables -fstack-protector-strong -fno-strict-aliasing -mno-outline-atomics -DX86_GAME_CODE -nostdinc -nostdinc++ -w -I../compiler/include -Igenerated -isystem ../compiler/include/freestanding -c $in -o $out',
             '  description = Compiling $in',
             'rule link',
-            '  command = "../compiler/ld.lld.exe" -shared -soname libscda_code.so -z max-page-size=16384 -z now -z relro --hash-style=gnu --eh-frame-hdr --no-as-needed ../compiler/libscda_host.so @$out.rsp -o $out',
+            '  command = "../compiler/ld.lld.exe" -shared -soname libscda_code.so -z max-page-size=16384 -z now -z relro --hash-style=gnu --eh-frame-hdr --no-as-needed ../compiler/libscda_host.so @$out.rsp ../compiler/libunwind.a -o $out',
             '  rspfile = $out.rsp',
             '  rspfile_content = $in',
             '  description = Linking libscda_code.so',
@@ -65,7 +65,7 @@ try {
         for ($i = 0; $i -lt $sources.Count; $i++) {
             $lines += "build $($objects[$i]): compile generated/$($sources[$i]) | generated/x86_recomp_shared.h ../compiler/clang++.exe $($headers -join ' ')"
         }
-        $lines += "build libscda_code.so: link $($objects -join ' ') | ../compiler/ld.lld.exe ../compiler/libscda_host.so"
+        $lines += "build libscda_code.so: link $($objects -join ' ') | ../compiler/ld.lld.exe ../compiler/libscda_host.so ../compiler/libunwind.a"
         [IO.File]::WriteAllLines((Join-Path $work 'build.ninja'), $lines, [Text.UTF8Encoding]::new($false))
         Push-Location $work
         try {
