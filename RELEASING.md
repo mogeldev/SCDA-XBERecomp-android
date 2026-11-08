@@ -77,4 +77,8 @@ Android `0.1.0-testing.5` / code 7, same debug certificate. Adds experimental An
 
 Android `0.1.0-testing.6` / code 8, same debug certificate. The release APK includes ARM64 and x86_64 runtimes. The matching Windows builder compiles both ABIs into one private game ZIP; import selects the device's library and normalizes it to the existing installed layout, retaining legacy single-library ZIP support. On-device compilation remains ARM64-only. Android 10 and the driver-specific Mali-G51 workaround remain experimental. Assets: dual-ABI APK, matching builder, corresponding source and SHA-256 sums. testing.5 assets remain unchanged.
 
+## Published testing version: 0.1.0-testing.7
+
+Android `0.1.0-testing.7` / code 9, same debug certificate. Adds opt-in phone gyro aiming during weapon aim/sniping, PHONE as the Android default source, independent gyro X/Y inversion, calibration completion/timeout feedback and automatic menu refresh. Existing controller behavior and saved preferences are retained; old gyro inversion follows the previous stick settings until explicitly changed. Skip intro movies defaults to ON for new/reset settings. Phone gyro test-build behavior was user-confirmed on Adreno 710; broader sensor/device coverage remains open. Assets: dual-ABI APK, matching dual-ABI Windows builder, corresponding source and SHA-256 sums. Previous releases remain unchanged.
+
 For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.

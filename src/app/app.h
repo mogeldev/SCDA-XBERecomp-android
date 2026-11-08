@@ -93,7 +93,7 @@ struct Settings {
     // aiming a weapon or through a scope, in place of the sensitivity above
     float aim_horizontal_sensitivity = 1.0f;
     float aim_vertical_sensitivity = 1.0f;
-    bool skip_intros = false;        // logos video and rating screen at boot
+    bool skip_intros = true;         // logos video and rating screen at boot
     bool pause_on_focus_loss = true;  // the game and its sound stop while the window is in the background
     std::string language = "auto";   // "auto" (the Windows display language) or one of kLanguages
     uint32_t audio_output = 0;       // audio::kOutputAuto, kOutputStereo, kOutputSurround or kOutputMono

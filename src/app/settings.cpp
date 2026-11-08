@@ -78,8 +78,14 @@ std::string SystemLanguage() {
 
 void LoadGyro(const toml::table& t, gyro::Settings& g) {
     g.enabled = t["gyro_aiming"].value_or(g.enabled);
+#ifdef __ANDROID__
+    g.source = std::min<uint32_t>(t["gyro_source"].value_or(g.source), gyro::kPhone);
+#endif
     g.sensitivity = float(t["gyro_sensitivity"].value_or(double(g.sensitivity)));
     g.axis = std::min<uint32_t>(t["gyro_axis"].value_or(g.axis), gyro::kWorld);
+    // Before separate gyro toggles existed, gyro direction followed stick inversion.
+    g.invert_x = t["gyro_invert_x"].value_or(t["invert_pad_x"].value_or(g.invert_x));
+    g.invert_y = t["gyro_invert_y"].value_or(t["invert_pad_y"].value_or(g.invert_y));
     uint32_t last_button = uint32_t(std::size(gyro::kButtonNames) - 1);
     g.button = std::min(t["gyro_button"].value_or(g.button), last_button);
     g.button_mode = std::min<uint32_t>(t["gyro_button_mode"].value_or(g.button_mode), gyro::kToggle);
@@ -241,8 +247,13 @@ toml::table Table() {
                   {"touch_controls", int64_t(s.touch_controls)},
                   {"touch_opacity", int64_t(s.touch_opacity)},
                   {"gyro_aiming", s.gyro.enabled},
+#ifdef __ANDROID__
+                  {"gyro_source", int64_t(s.gyro.source)},
+#endif
                   {"gyro_sensitivity", double(s.gyro.sensitivity)},
                   {"gyro_axis", int64_t(s.gyro.axis)},
+                  {"gyro_invert_x", s.gyro.invert_x},
+                  {"gyro_invert_y", s.gyro.invert_y},
                   {"gyro_button", int64_t(s.gyro.button)},
                   {"gyro_button_mode", int64_t(s.gyro.button_mode)},
                   {"gyro_recenter_button", int64_t(s.gyro.recenter_button)},

@@ -45,6 +45,16 @@ void JNICALL TouchSet(JNIEnv*, jclass, jint buttons, jint left, jint right, jint
 
 jint JNICALL TouchOpacity(JNIEnv*, jclass) { return input::TouchOpacity(); }
 
+jboolean JNICALL PhoneWanted(JNIEnv*, jclass) {
+    std::lock_guard lock(app::UiLock());
+    const auto& s = app::Get().gyro;
+    return s.enabled && s.source == gyro::kPhone;
+}
+void JNICALL PhoneReset(JNIEnv*, jclass, jboolean active) { gyro::ResetPhone(active); }
+void JNICALL PhoneSample(JNIEnv*, jclass, jboolean accel, jfloat x, jfloat y, jfloat z, jlong ns, jint rotation) {
+    if (ns > 0) gyro::PhoneSample(accel, x, y, z, uint64_t(ns), rotation);
+}
+
 // the on-screen controller (TouchControls.java) over SDL's view; it shows itself when the settings say
 void AttachTouchControls() {
     auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
@@ -66,6 +76,20 @@ void AttachTouchControls() {
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         LOGE("touch controls: not attached");
+    }
+    auto phone = static_cast<jclass>(env->CallObjectMethod(
+        loader, env->GetMethodID(loader_class, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;"),
+        env->NewStringUTF("io.github.mogeldev.scda.PhoneGyro")));
+    const JNINativeMethod phone_natives[] = {
+        {const_cast<char*>("nativeWanted"), const_cast<char*>("()Z"), reinterpret_cast<void*>(PhoneWanted)},
+        {const_cast<char*>("nativeReset"), const_cast<char*>("(Z)V"), reinterpret_cast<void*>(PhoneReset)},
+        {const_cast<char*>("nativeSample"), const_cast<char*>("(ZFFFJI)V"), reinterpret_cast<void*>(PhoneSample)},
+    };
+    if (!env->ExceptionCheck() && phone && env->RegisterNatives(phone, phone_natives, 3) == JNI_OK)
+        env->CallStaticVoidMethod(phone, env->GetStaticMethodID(phone, "attach", "(Landroid/app/Activity;)V"), activity);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("phone gyro: not attached");
     }
 }
 

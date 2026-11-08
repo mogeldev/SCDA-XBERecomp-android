@@ -105,6 +105,8 @@ struct Motion {
     RestWindow rest;
     bool calibrating = false;  // the next still window sets the drift, however large
     bool calibrated = false;  // by hand: rest windows stop, a slow steady turn would pass for drift
+    uint64_t calibration_deadline = 0;
+    bool calibration_failed = false;
     // degrees turned since the last take: about the controller's up, its front, the world's up; pitch down positive
     float yaw = 0;
     float roll = 0;
@@ -116,6 +118,11 @@ struct Motion {
 
 std::mutex g_lock;
 Motion g_motion;
+#ifdef __ANDROID__
+Motion g_phone;
+bool g_phone_active = false;
+int g_phone_rotation = -1;
+#endif
 bool g_toggled_off = false;  // the gyro button in kToggle mode
 
 // seconds since the last reading, 0 for the first and for a stall
@@ -141,17 +148,24 @@ void ReadAccel(Motion& m, const Vec3& accel, uint64_t ns) {
 }
 
 // a window the controller lay still through sets the drift to the gyro's mean over it
-void UpdateDrift(Motion& m, const Vec3& gyro, float dt) {
+void UpdateDrift(Motion& m, const Vec3& gyro, float dt, bool phone) {
     RestWindow& w = m.rest;
     w.gyro.Add(gyro);
     w.mean.Push(gyro, dt);
     if (w.mean.seconds < kRestSeconds) return;
     Vec3 mean = w.mean.Mean();
-    bool still = w.gyro.Widest() < kRestGyroSpread && w.accel.Widest() < kRestAccelSpread;
+    // Handheld phone accelerometers are noisier than controller sensors. Only manual phone calibration
+    // uses the wider rest window; automatic drift correction keeps the conservative controller limits.
+    bool manual_phone = phone && m.calibrating;
+    bool still = w.gyro.Widest() < (manual_phone ? 3.0f : kRestGyroSpread)
+        && w.accel.Widest() < (manual_phone ? 0.5f : kRestAccelSpread)
+        && (!manual_phone || Largest(mean) < 3.0f);
     if (still && m.calibrating) {
         m.drift = mean;
         m.calibrating = false;
         m.calibrated = true;
+        m.calibration_deadline = 0;
+        m.smoothed = {};
         LOGR("gyro: drift %.3f %.3f %.3f", m.drift.x, m.drift.y, m.drift.z);
     } else if (still && !m.calibrated && Largest(mean) < kMaxDrift) {
         m.drift = mean;
@@ -167,10 +181,14 @@ Vec3 ApplySmoothing(Motion& m, const Vec3& turn, float dt) {
     return Add(Scale(turn, fast), m.smoothed);
 }
 
-void ReadGyro(Motion& m, const Vec3& radians, uint64_t ns) {
+void ReadGyro(Motion& m, const Vec3& radians, uint64_t ns, bool phone = false) {
     float dt = Gap(m.gyro_ns, ns);
     Vec3 gyro = Scale(radians, kDegreesPerRadian);
-    UpdateDrift(m, gyro, dt);
+    if (m.calibrating && SDL_GetTicksNS() >= m.calibration_deadline) {
+        m.calibrating = false;
+        m.calibration_failed = true;
+    }
+    UpdateDrift(m, gyro, dt, phone);
     if (m.calibrating) return;
     Vec3 turn = ApplySmoothing(m, Sub(gyro, m.drift), dt);
     m.yaw += turn.y * dt;
@@ -266,19 +284,45 @@ float AxisTurn(const Motion& m, uint32_t axis) {
 
 Turn Take(const Settings& s) {
     static uint64_t last_take = 0;
+#ifdef __ANDROID__
+    bool phone = s.source == kPhone;
+    if (s.enabled && !phone) EnsureSensors();
+    std::lock_guard lock(g_lock);
+    static uint32_t last_source = kController;
+    static bool last_enabled = false;
+    if (last_source != s.source || last_enabled != s.enabled) {
+        g_motion = {};
+        g_phone = {};
+        g_toggled_off = false;
+        last_take = 0;
+        last_source = s.source;
+        last_enabled = s.enabled;
+    }
+    if (!s.enabled) return {};
+#else
     if (!s.enabled) return {};
     EnsureSensors();
+    std::lock_guard lock(g_lock);
+#endif
     uint64_t now = SDL_GetTicksNS();
     bool stale = now - last_take > kStaleNs;
     last_take = now;
-    std::lock_guard lock(g_lock);
+#ifdef __ANDROID__
+    Motion& m = phone ? g_phone : g_motion;
+#else
     Motion& m = g_motion;
+#endif
     Turn turn;
     if (stale) m.pressed = 0;  // presses while the look did not run
+#ifdef __ANDROID__
+    // Phone input has no controller-only activation/recenter buttons.
+    bool on = phone ? g_phone_active : UpdateSwitch(s, m);
+#else
     bool on = UpdateSwitch(s, m);
+#endif
     if (on && !stale) {
-        turn.yaw = AxisTurn(m, s.axis) * s.sensitivity;
-        turn.pitch = m.pitch * s.sensitivity;
+        turn.yaw = AxisTurn(m, s.axis) * s.sensitivity * (s.invert_x ? -1.0f : 1.0f);
+        turn.pitch = m.pitch * s.sensitivity * (s.invert_y ? -1.0f : 1.0f);
     }
     turn.recenter = !stale && (m.pressed & ButtonBit(s.recenter_button));
     m.yaw = 0;
@@ -289,16 +333,76 @@ Turn Take(const Settings& s) {
     return turn;
 }
 
-void StartCalibration() {
+void StartCalibration(uint32_t source) {
     std::lock_guard lock(g_lock);
-    if (!g_motion.pad) return;  // no gyro read yet
-    g_motion.calibrating = true;
-    g_motion.rest = {};
+#ifdef __ANDROID__
+    Motion& m = source == kPhone ? g_phone : g_motion;
+#else
+    Motion& m = g_motion;
+#endif
+    m.calibration_failed = !m.gyro_ns;
+    if (!m.gyro_ns) return;  // no gyro read yet
+    m.calibrating = true;
+    m.calibration_deadline = SDL_GetTicksNS() + 10'000'000'000;
+    m.rest = {};
+    m.yaw = m.roll = m.world_yaw = m.pitch = 0;
 }
 
-bool Calibrating() {
+bool Calibrating(uint32_t source) {
     std::lock_guard lock(g_lock);
+#ifdef __ANDROID__
+    return (source == kPhone ? g_phone : g_motion).calibrating;
+#else
     return g_motion.calibrating;
+#endif
 }
+
+const char* CalibrationStatus(uint32_t source) {
+    std::lock_guard lock(g_lock);
+#ifdef __ANDROID__
+    Motion& m = source == kPhone ? g_phone : g_motion;
+#else
+    Motion& m = g_motion;
+#endif
+    if (m.calibrating && SDL_GetTicksNS() >= m.calibration_deadline) {
+        m.calibrating = false;
+        m.calibration_failed = true;
+    }
+    if (m.calibrating) return "KEEP STILL";
+    if (m.calibration_failed) return "RETRY";
+    return m.calibrated ? "DONE" : "START";
+}
+
+#ifdef __ANDROID__
+void ResetPhone(bool active) {
+    std::lock_guard lock(g_lock);
+    g_phone = {};
+    g_phone_active = active;
+    g_phone_rotation = -1;
+}
+
+void PhoneSample(bool accel, float x, float y, float z, uint64_t ns, int rotation) {
+    if (!ns || rotation < 0 || rotation > 3 || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
+    std::lock_guard lock(g_lock);
+    if (!g_phone_active) return;
+    if (rotation != g_phone_rotation) {
+        g_phone = {};  // old gravity, drift and pending turns use a different coordinate frame
+        g_phone_rotation = rotation;
+    }
+    // Android natural-device axes -> screen right, screen top, out of screen.
+    // Both vectors must use the same proper rotation for WORLD projection and calibration.
+    Vec3 data;
+    switch (rotation) {
+        case 0: data = {x, y, z}; break;
+        case 1: data = {-y, x, z}; break;
+        case 2: data = {-x, -y, z}; break;
+        default: data = {y, -x, z}; break;
+    }
+    uint64_t last = accel ? g_phone.accel_ns : g_phone.gyro_ns;
+    if (ns <= last) return;  // duplicated/out-of-order samples must not rewind the integration clock
+    if (accel) ReadAccel(g_phone, data, ns);
+    else ReadGyro(g_phone, data, ns, true);
+}
+#endif
 
 }  // namespace gyro

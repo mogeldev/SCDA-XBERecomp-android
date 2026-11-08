@@ -746,6 +746,16 @@ void MenuTick(X86Context& ctx) {
         revision = r;
         g_take.refill = true;
     }
+    // Sensor callbacks finish calibration without changing settings. Refresh only on a status transition,
+    // after any popup/capture closes; Fill preserves the current selection.
+    static std::string calibration_status;
+    if (g_take.mode == 2 && g_capture < 0 && g_popup_row < 0) {
+        std::string status = gyro::CalibrationStatus(app::Get().gyro.source);
+        if (status != calibration_status) {
+            calibration_status = std::move(status);
+            g_take.refill = true;
+        }
+    }
     if (g_take.refill) {
         g_take.refill = false;
         Fill(ctx, std::max(0, int(int16_t(R16(g_take.list + kSelection)))));

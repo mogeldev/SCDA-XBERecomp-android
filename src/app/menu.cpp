@@ -333,7 +333,7 @@ enum RowId {
     kAudioOutput, kHdrOutput, kShadowFilter, kBrightness, kContrast, kPauseOnFocusLoss, kFreeLookSensitivity, kWeaponSensitivity,
     kSniperSensitivity, kFmvScale, kColourBlind, kAimHorizontal, kAimVertical, kInvertMouseX, kInvertPadX, kInvertPadY,
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
-    kVibration, kGyroAiming, kGyroSensitivity, kGyroAxis, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
+    kVibration, kGyroAiming, kGyroSource, kGyroSensitivity, kGyroAxis, kGyroInvertX, kGyroInvertY, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
     kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow,
     kTouchControls, kTouchOpacity
 };
@@ -476,8 +476,13 @@ const std::vector<Row>& PadRows() {
                                 {Kind::Value, kTouchOpacity, "TOUCH CONTROLS OPACITY"},
                                 {Kind::Heading, -1, "GYRO"},
                                 {Kind::Value, kGyroAiming, "GYRO AIMING"},
+#ifdef __ANDROID__
+                                {Kind::Value, kGyroSource, "GYRO SOURCE"},
+#endif
                                 {Kind::Value, kGyroSensitivity, "GYRO SENSITIVITY"},
                                 {Kind::Value, kGyroAxis, "GYRO AXIS"},
+                                {Kind::Value, kGyroInvertX, "INVERT X AXIS"},
+                                {Kind::Value, kGyroInvertY, "INVERT Y AXIS"},
                                 {Kind::Value, kGyroButton, "GYRO BUTTON"},
                                 {Kind::Value, kGyroButtonMode, "GYRO BUTTON MODE"},
                                 {Kind::Value, kGyroRecenter, "RECENTER BUTTON"},
@@ -525,6 +530,8 @@ bool* ToggleFlag(Settings& s, int id) {
         case kInvertPadX: return &s.invert_pad_x;
         case kInvertPadY: return &s.invert_pad_y;
         case kGyroAiming: return &s.gyro.enabled;
+        case kGyroInvertX: return &s.gyro.invert_x;
+        case kGyroInvertY: return &s.gyro.invert_y;
         case kTextureReplacement: return &s.custom_textures;
         case kTextureDumping: return &s.dump_textures;
         default: return nullptr;
@@ -782,6 +789,9 @@ void StepGeneralRow(int id, int step, Settings& s, char (&text)[64]) {
             std::snprintf(text, sizeof(text), "%.1f", float(shown) / 10.0f);
             break;
         }
+        case kGyroSource:
+            StepName(s.gyro.source, gyro::kSourceNames, step, text);
+            break;
         case kGyroSensitivity: {
             float& v = s.gyro.sensitivity;
             // 0.1 to 5.0 in steps of 0.1
@@ -793,18 +803,27 @@ void StepGeneralRow(int id, int step, Settings& s, char (&text)[64]) {
             StepName(s.gyro.axis, gyro::kAxisNames, step, text);
             break;
         case kGyroButton:
+#ifdef __ANDROID__
+            if (s.gyro.source == gyro::kPhone) { std::snprintf(text, sizeof(text), "NONE"); break; }
+#endif
             StepName(s.gyro.button, gyro::kButtonNames, step, text);
             break;
         case kGyroButtonMode:
+#ifdef __ANDROID__
+            if (s.gyro.source == gyro::kPhone) { std::snprintf(text, sizeof(text), "NONE"); break; }
+#endif
             StepName(s.gyro.button_mode, gyro::kButtonModeNames, step, text);
             break;
         case kGyroRecenter:
+#ifdef __ANDROID__
+            if (s.gyro.source == gyro::kPhone) { std::snprintf(text, sizeof(text), "NONE"); break; }
+#endif
             StepName(s.gyro.recenter_button, gyro::kButtonNames, step, text);
             break;
         case kGyroCalibrate:
             // a step shown on a copy of the settings starts nothing
-            if (step && &s == &Get()) gyro::StartCalibration();
-            std::snprintf(text, sizeof(text), "%s", gyro::Calibrating() ? "KEEP STILL" : "START");
+            if (step && &s == &Get()) gyro::StartCalibration(s.gyro.source);
+            std::snprintf(text, sizeof(text), "%s", gyro::CalibrationStatus(s.gyro.source));
             break;
         case kVibration:
             // 0% to 200% in steps of 10

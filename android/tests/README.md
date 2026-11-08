@@ -30,6 +30,19 @@ python -m unittest discover -s android/tests -p "test_*.py"
 
 The [emulator harness](../../tools/on-device-import-test/README.md) uses these exact shared classes, under a separate app ID. The [separate full setup app](../../tools/on-device-setup/README.md) still supports import/compile/gameplay tests without replacing production. Production-package upgrade, manual file/folder pickers and low-storage tests remain necessary. Do not install over the normal phone app without permission.
 
+## Phone gyro tests
+
+`gyro-test.cpp` exercises the real Android gyro path with synthetic sensor events and stubbed SDL functions: all Surface rotations, YAW/ROLL/WORLD, calibration, duplicate/invalid/stale samples, pause/resume, source changes, disabled input and controller-only button gating. No SDL runtime, GPU or game files are needed. This is a host unit test, not a Windows game build.
+
+From an x64 Visual Studio developer command prompt with LLVM Clang on PATH, set `SDL_INCLUDE` to the SDL3 source `include` directory from an Android build:
+
+```bat
+clang++ -std=c++20 -Wno-dll-attribute-on-redeclaration -Isrc -I"%SDL_INCLUDE%" android/tests/gyro-test.cpp -o out/gyro-test.exe
+out\gyro-test.exe
+```
+
+The APK build checks Java/JNI compilation for both ABIs. Physical checks still need gyro direction in both landscape orientations, calibration/drift, sensitivity, focus/background/resume, no-sensor behavior and controller gyro regression. No phone installation/data changes are part of this unit test.
+
 ## Vulkan renderer tests
 
 No GPU or game assets needed. Tests cover pass-end barrier stage/access scopes (attachment RAW/WAW, fragment-read WAR, transfer consumers and global alias scope); unused programmable texture modes (including coordinate/discard preservation) and fixed-function stage termination; full-attachment clear detection (empty/multiple/partial/offset/layer rejection); descriptor-set key equality/misses for every binding field, per-frame isolation and reset; 5,000 images sharing one allocation, alignment/non-overlap, hole coalescing, memory-type isolation, dedicated/large allocations and OOM fallback; present/flush fence ordering, concurrent wait/reset and failure handling; real glslang compilation with SPIR-V `PointSize` stores for fixed/programmed vertex shaders; and shadow/wide-filter fragment helpers across all four stages, fixed/programmed and quad paths, checking that no image/sampler resource is stored by `OpStore`. The Mali-G51 workaround tests check exact GPU/driver matching, compensated vertex/fragment shader compilation and screen-linear interpolation with varying clip W.

@@ -39,10 +39,14 @@ void ApplyGyro(uint32_t controller) {
     const app::Settings& s = app::Get();
     gyro::Turn turn = gyro::Take(s.gyro);
     if (app::MenuOpen() || input::NetSession()) return;
+#ifdef __ANDROID__
+    // Consume motion even outside aiming, so entering aim cannot apply an accumulated turn.
+    if (s.gyro.source == gyro::kPhone && !input::Aiming()) return;
+#endif
     if (turn.recenter) W32(controller + kPitch, 0);
     // the gyro's yaw is left positive and its pitch down positive
-    float yaw = s.invert_pad_x ? turn.yaw : -turn.yaw;
-    float pitch = s.invert_pad_y ? turn.pitch : -turn.pitch;
+    float yaw = -turn.yaw;
+    float pitch = -turn.pitch;
     AddUnits(controller + kYaw, TakeUnits(yaw, g_yaw_rest));
     AddUnits(controller + kPitch, TakeUnits(pitch, g_pitch_rest));
 }

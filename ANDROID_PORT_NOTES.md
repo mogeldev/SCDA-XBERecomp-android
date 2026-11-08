@@ -35,6 +35,15 @@ State as of 2026-11-05. Branch `android-port`; latest work: Windows ARM64 player
 
 Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunch, 8344e24 pad bridge, 405cc4e Vulkan renderer, c38a742 runs on the phone, 94f4cfc late readbacks / border colours / unfiltered depth, 9a7852e 50% render default and -O2 host.
 
+## Phone gyro (testing.7)
+
+- Android adds **GYRO SOURCE: CONTROLLER / PHONE** under Recomp Settings → CONTROLLER → GYRO. PHONE is the Android default source; existing saved source selections are preserved. Gyro aiming remains off by default. Source is saved as `gyro_source`.
+- PHONE uses the device gyroscope and accelerometer with native sensor timestamps at a requested 100 Hz. Both sensors are required; missing/failed sensors log a warning and leave phone aiming inactive. No new permission or dependency is needed.
+- Enable GYRO AIMING, select PHONE, and use the existing sensitivity, YAW/ROLL/WORLD and CALIBRATE GYRO settings. Keep the phone still (preferably resting on a stable surface) for roughly two seconds to calibrate. Manual phone calibration tolerates more sensor noise than controller calibration; the menu reports DONE on success or RETRY after ten seconds without a valid still window. Phone yaw is about screen-up, pitch about screen-right; both landscape orientations are remapped. WORLD uses measured gravity. Controller-only gyro/recenter button rows show NONE for PHONE; their saved controller values are retained.
+- Separate **INVERT X AXIS / INVERT Y AXIS** toggles in GYRO apply to both phone and controller gyro, independently of stick inversion. Saved as `gyro_invert_x` / `gyro_invert_y`, default off; old configs inherit their previous stick-inversion values once to preserve gyro direction.
+- Phone input works independently of touch-overlay visibility and adds camera rotation rather than simulated stick input, only while the game's weapon-aim/sniper state is active. Motion outside aim is consumed and discarded; controller gyro behavior is unchanged. Focus loss/pause unregister sensors and discard pending motion; resume, orientation/source changes and stale samples cannot integrate a long pause into a camera turn.
+- Dual-ABI APK build and host gyro tests pass. **Physical phone checks remain required:** aim direction in both landscape orientations, sensitivity/drift/calibration, OFF/source switching, controller gyro regression, missing sensors and focus/background/resume. The user confirmed the phone gyro test build works, including the follow-up changes. This is user-reported test-build coverage, not an exhaustive sensor/device validation. Skip intro movies now defaults to ON; saved preferences remain unchanged.
+
 ## User validation follow-up
 
 - On the Android 16 / Adreno 710 phone, the transition from level 1 to level 2 succeeds repeatedly in the user's current build. The previously reported problem is no longer reproducible in this scenario; the responsible change has not been identified. The exact installed APK version was not recorded for this follow-up. Other level transitions are not covered by this result.
