@@ -47,7 +47,7 @@ public class SetupActivity extends Activity {
         setup.version(GameImport.appVersion != null ? GameImport.appVersion : "unknown version");
         DriverChoice.attach(setup.driver);
         setup.report.setOnClickListener(view -> DeviceReport.show(this));
-        setup.update.setOnClickListener(view -> checkUpdates());
+        setup.update.setOnClickListener(view -> checkUpdates(false));
         setup.play.setOnClickListener(view -> launchGame());
         select = setup.select;
         folder = setup.folder;
@@ -84,12 +84,17 @@ public class SetupActivity extends Activity {
             status.setText("The previous import was interrupted. Select the input again to retry.");
         select.requestFocus();
         if (installed) setup.showReady();
+        // every fresh start asks quietly; only a newer release is shown
+        if (state == null) checkUpdates(true);
     }
 
-    // Only on request: asks GitHub for the newest release (pre-releases included) and offers its page.
-    private void checkUpdates() {
-        setup.update.setEnabled(false);
-        setup.update.setText("Checking…");
+    // Asks GitHub for the newest release (pre-releases included) and offers its page. Quiet (app start): no button
+    // state, and nothing shown unless a newer version is available.
+    private void checkUpdates(boolean quiet) {
+        if (!quiet) {
+            setup.update.setEnabled(false);
+            setup.update.setText("Checking…");
+        }
         String current = GameImport.appVersion;
         new Thread(() -> {
             String message, newest = null;
@@ -98,7 +103,7 @@ public class SetupActivity extends Activity {
                 if (tag != null && UpdateCheck.isNewer(tag, current)) {
                     newest = tag;
                     message = "Version " + tag.replaceFirst("^v", "") + " is available. You have " + current + ".\n\n"
-                        + "Download the APK and the Windows builder of that version from its release page. "
+                        + "Download the APK of that version from its release page. "
                         + "Install the APK over this app; do not uninstall it, or saves and settings are deleted.";
                 } else message = "You have the newest version (" + current + ").";
             } catch (IOException | RuntimeException e) {
@@ -108,8 +113,11 @@ public class SetupActivity extends Activity {
             String text = message, tag = newest;
             runOnUiThread(() -> {
                 if (isDestroyed() || isFinishing()) return;
-                setup.update.setEnabled(true);
-                setup.update.setText("Check for updates");
+                if (quiet && (tag == null || worker != null || picking)) return;  // not over a running import
+                if (!quiet) {
+                    setup.update.setEnabled(true);
+                    setup.update.setText("Check for updates");
+                }
                 setup.message(tag != null ? "Update available" : "Updates", text,
                     tag != null ? "Open release page" : null, () -> {
                     try {
@@ -140,7 +148,7 @@ public class SetupActivity extends Activity {
                 + "Archives may contain one ISO or one game folder. Encrypted/split archives and CHD/CSO/CCI are unsupported.\n\n"
                 + "Allow about 3.5 GB for campaign files, plus the input copy, temporary extraction and at least 512 MiB for compilation. "
                 + "Compilation took 6–8 minutes on the tested ARM64 phone, excluding import; other devices may differ. Keep setup open; Back cancels.\n\n"
-                + "Matching prebuilt-library ZIPs also work. Saves and settings are not changed. Controller recommended; touch controls are available."
+                + "Saves and settings are not changed. Controller recommended; touch controls are available."
             : "Use a ZIP from the matching Windows builder. ZIP root: lib/arm64-v8a/libscda_code.so, lib/x86_64/libscda_code.so and assets/. "
                 + "Inside assets/: default.xbe, Default/ and Media/.\n\n"
                 + "Allow space for the extracted game in addition to the ZIP. Keep setup open; Back cancels. "
@@ -150,7 +158,7 @@ public class SetupActivity extends Activity {
             "Your own supported original Xbox copy is required. Not PC or Xbox 360. The importer checks the executable hash. No game content is included.",
             message,
             "Allow about 3.5 GB for campaign files, plus the input copy and temporary extraction. Local compilation requires at least 512 MiB free. A working installation does not need reimporting after a normal app update.",
-            "Android 10 or newer (Android 10 experimental). Vulkan 1.1. ARM64 and x86_64 support local compilation; a ZIP from the matching Windows builder also works. Compatibility depends on the GPU and driver.",
+            "Android 10 or newer (Android 10 experimental). Vulkan 1.1. ARM64 and x86_64 compile the game on the device. Compatibility depends on the GPU and driver.",
             "Controller recommended; touch controls are available. Optional phone gyro aiming is configured in the in-game controller settings.",
             "Install updates over the existing app with the same signing certificate. Do not uninstall or clear app data: saves and settings would be deleted."
         };

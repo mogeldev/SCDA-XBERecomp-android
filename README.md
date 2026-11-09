@@ -1,6 +1,6 @@
 # Splinter Cell: Double Agent — Android
 
-Unofficial **original Xbox → Android ARM64 / x86_64** port using static recompilation, Vulkan and SDL3. **Campaign only; controller recommended, touch controls available.** No co-op, versus or networking.
+Unofficial **original Xbox → Android ARM64 / x86_64** port using static recompilation, Vulkan and SDL3. **Campaign only; controller recommended, touch controls available.** No co-op, versus or networking; the main menu lists only Solo, Credits and Exit.
 
 **Bring your own legally acquired Xbox game.** No game assets or recompiled game code are included. PC/Xbox 360 versions are not supported.
 
@@ -18,7 +18,7 @@ On-device compilation runs on **ARM64 and x86_64** from 0.2.0-testing.3 (earlier
 
 
 1. Install the APK (includes ARM64 and x86_64) and open SCDA.
-2. Import your supported game and keep setup open for on-device compilation (ARM64 and x86_64). Alternatively import a game ZIP from the matching Windows builder (one ZIP supports both architectures).
+2. Import your supported game and keep setup open for on-device compilation (ARM64 and x86_64). The Windows builder is retired from 0.3.0-testing.1.
 3. Play with touch controls or a controller. Start at **50% render resolution**.
 
 [Full setup/import/update guide](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Setup) · [Controls and touch settings](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Controls) · [Troubleshooting](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Troubleshooting)
@@ -27,7 +27,7 @@ On-device compilation runs on **ARM64 and x86_64** from 0.2.0-testing.3 (earlier
 
 ## Status
 
-[**0.2.0-testing.3**](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.2.0-testing.3) — testing prerelease, not stable. **On-device compilation now also on x86_64**; APK and Windows builder support ARM64 + x86_64. In-game-style launcher, optional bundled Turnip driver with supported-Adreno detection, and a manual **Share device report**. Manufacturer driver remains default. The APK is about 219 MB because it carries compiler tools for both architectures.
+[**0.3.0-testing.1**](https://github.com/mogeldev/SCDA-XBERecomp-android/releases/tag/v0.3.0-testing.1) — testing prerelease, not stable. **New anti-aliasing option (SMAA default, FXAA, off)**, 4x anisotropic filtering by default, a quiet update check at app start, and a main menu without co-op/versus. On-device compilation on ARM64 and x86_64; **the Windows builder is retired** and no longer published. In-game-style launcher, optional bundled Turnip driver with supported-Adreno detection, and a manual **Share device report**. Manufacturer driver remains default. The APK is about 219 MB because it carries compiler tools for both architectures.
 
 Gameplay confirmed on Adreno 710 and experimentally on Mali-G51; x86_64 emulator tested through the title screen. See the wiki for [tested devices, level-transition results and known limitations](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Compatibility). Other Mali drivers, 16-KiB devices and extended stability remain untested.
 

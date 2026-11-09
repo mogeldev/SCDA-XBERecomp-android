@@ -1,6 +1,16 @@
 # SCDA Android port: notes
 
-Current release: 0.2.0-testing.3 (adds on-device compilation on x86_64). 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.3.0-testing.1 (anti-aliasing, anisotropic default, start-up update check, campaign-only main menu). 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+
+## 0.3.0-testing.1: anti-aliasing, defaults, update check, main menu
+
+- **ANTI-ALIASING** (Recomp Settings → GRAPHICS, Android only, saved as `post_aa`): OFF / FXAA (FAST) / SMAA; **SMAA is the default** for new/reset settings. Runs in `src/android/vulkan.cpp` over the finished frame at render resolution (HUD included), before the present blit scales it to the screen. FXAA is one FXAA 3.11-style pass; SMAA 1x uses the same reference shader and lookup textures as the desktop D3D12 path (`gpu/smaa_shader.h`, `gpu/smaa_textures.h`; threshold 0.1, 16/8 search steps), three passes. Its images exist only while enabled; switching applies live. Shaders validated with the NDK's glslc; first enable compiles them once.
+- User-reported on Adreno 710: FXAA and SMAA work with barely any performance impact. No per-pass GPU timing recorded; Mali and weaker GPUs untested.
+- **Anisotropic filtering defaults to 4x** on Android for new/reset settings (`anisotropic_filtering`); saved values are kept.
+- The launcher now checks GitHub for a newer release **quietly at each fresh app start** and shows the release notice only when one is available (not over a running import or open picker). Errors and "up to date" stay silent; **Check for updates** keeps its explicit result. Nothing is downloaded or installed.
+- The title's game mode list shows **Solo, Credits, Exit** only (`src/game/xbox_live.cpp` skips the Coop/Versus AddItem calls; `exit_menu.cpp` maps the selection back to the game's indices). User-confirmed on the phone.
+- Desktop builds keep their previous defaults and menus (`#ifdef __ANDROID__`).
+- **Windows builder retired.** Releases no longer include `SCDA-Android-<version>-Windows-Builder.zip`; setup is on-device compilation on ARM64 and x86_64. A versioned builder ZIP is refused with a message pointing to on-device compilation; old unversioned prebuilt ZIPs still import. `tools/android-builder/` remains in the repository for reference only and is no longer packaged or tested for releases.
 
 ## 0.2.0-testing.3: on-device compilation on x86_64
 
@@ -23,13 +33,13 @@ Current release: 0.2.0-testing.3 (adds on-device compilation on x86_64). 0.2.0-t
 ## Scope
 
 - Native Android port of the SCDA Xbox recomp, released for other players. The fork may diverge from upstream.
-- Campaign only (default.xbe). No co-op, versus, networking or voice. Starting versus shows a notice.
+- Campaign only (default.xbe). No co-op, versus, networking or voice. From 0.3.0-testing.1 the main menu no longer lists Coop or Versus; starting versus another way still shows a notice.
 - Controller, or the on-screen touch controls (TouchControls.java, shown while no controller is plugged in; Controller page: TOUCH CONTROLS AUTOMATIC/ON/OFF and opacity). No mouse or keyboard.
-- Shader Model 1.1 Xbox look only. No SM3, HDR, AO, SMAA or MSAA.
+- Shader Model 1.1 Xbox look only. No SM3, HDR, AO or MSAA. Post-process FXAA/SMAA over the final frame from 0.3.0-testing.1.
 - Must run on Snapdragon/Adreno and Mali. Mali has no BC textures, so they are decoded on the CPU.
 - The game code is recompiled on the player's Windows PC into `libscda_code.so`. Players put it and the extracted campaign files into one ZIP; Android imports that ZIP on first boot through the system file picker. `tools/android-builder/` provides the self-contained Windows builder package.
 - Not needed: F10 ImGui overlay, texture dump/replace, splash, custom cursor, GitHub Actions release packaging. Build and package locally.
-- Windows/desktop game builds (D3D12 renderer, desktop menus) are out of scope and not maintained. Shared code may break them; do not build or test them. The Windows player builder (`tools/android-builder/`) stays in scope.
+- Windows/desktop game builds (D3D12 renderer, desktop menus) are out of scope and not maintained. Shared code may break them; do not build or test them. The Windows player builder (`tools/android-builder/`) is retired from 0.3.0-testing.1 and no longer released.
 - minSdk 29; **Android 10 support is experimental** (launcher window-inset fallback, guest-memory `memfd_create` syscall, API 29 compiler/import tools and a statically linked game-code unwinder).
 - Huawei AGS3K / Mali-G51 on Android 10: gameplay user-confirmed. Automatic shader workaround only for ARM vendor `0x13B5`, device name `Mali-G51`, driver `0x04800000` (r18p0): reconstruct screen-linear interpolation without `NoPerspective`, which crashes this driver's pipeline compiler. Source-specific shader cache hashes keep both variants separate. Other GPUs/drivers retain the original path. Full first-run tablet compilation → game launch → gameplay and good-looking visuals were user-confirmed, as was the Android 16 phone with no apparent regressions. Packaged compiler/linker and Windows-built library runtime checks also passed on Android 10. Longer-term visual/stability checks and broader import-format coverage remain open.
 

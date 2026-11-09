@@ -18,7 +18,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File android/tests/package-game-t
 
 ## On-device compiler/import integration
 
-The production launcher uses `OnDeviceSetupActivity` on ARM64 and x86_64; no private ADB test-import entry is present in production. It retains the old launcher component as an alias. With an installed game it opens as a launcher (Play, Check for updates); the app icon while the game runs returns to the game. Plain-Java checks for the shared cache/source importer and production wiring:
+The production launcher uses `OnDeviceSetupActivity` on ARM64 and x86_64; no private ADB test-import entry is present in production. It retains the old launcher component as an alias. With an installed game it opens as a launcher (Play, Check for updates); each fresh start also checks quietly and only shows a newer release. The app icon while the game runs returns to the game. Plain-Java checks for the shared cache/source importer and production wiring:
 
 ```bat
 javac -d out/import-tests android/src/main/java/io/github/mogeldev/scda/GameImport.java android/src/main/java/io/github/mogeldev/scda/CompileCache.java android/src/main/java/io/github/mogeldev/scda/GameSource.java tools/on-device-setup/CompileCacheTest.java tools/on-device-setup/GameSourceTest.java

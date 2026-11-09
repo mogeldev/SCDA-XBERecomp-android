@@ -219,7 +219,7 @@ final class GameImport {
         String built = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8).trim();
         if (!built.equals(appVersion))
             throw new IOException("This game ZIP was made by Windows builder " + built + ", but this app is " + appVersion
-                + ". Use the builder with the same version as the app, or install the matching app version.");
+                + ". The Windows builder is retired: import the game ISO, archive or folder instead to compile it on the device.");
     }
 
     static void validateName(String name, boolean directory) throws IOException {

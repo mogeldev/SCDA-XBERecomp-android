@@ -9,8 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// Asks GitHub for the newest release, only when the player taps "Check for updates". Nothing is downloaded or
-// installed: a newer version opens its release page. Tools/android-builder/Builder.cs compares the same way.
+// Asks GitHub for the newest release: quietly at each app start and when the player taps "Check for updates".
+// Nothing is downloaded or installed: a newer version opens its release page. Tools/android-builder/Builder.cs compares the same way.
 final class UpdateCheck {
     static final String REPOSITORY = "mogeldev/SCDA-XBERecomp-android";
     private static final String API = "https://api.github.com/repos/" + REPOSITORY + "/releases?per_page=30";

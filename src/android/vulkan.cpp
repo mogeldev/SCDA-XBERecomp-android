@@ -44,6 +44,8 @@
 #include "android/render_clears.h"
 #include "android/texture_stages.h"
 #include "android/vertex_hlsl.h"
+#include "gpu/smaa_shader.h"
+#include "gpu/smaa_textures.h"
 
 namespace gpu {
 
@@ -791,13 +793,21 @@ private:
     void BuildPipelineKey(const State& s, const Assembled& a, const DrawShaders& sh, Target* rt, Target* ds, PipeKey& k);
     VkPipeline EnsurePipeline(const PipeKey& k, VkShaderModule vs, VkShaderModule ps);
     VkPipeline EnsureBlitPipeline(VkFormat fmt, bool over);
+    VkPipeline EnsureScreenPipeline(const char* hlsl, const char* vs_entry, const char* ps_entry, VkFormat fmt,
+                                    bool over, bool clear);
+    // anti-aliasing (app::Settings::post_aa) over the finished frame, before it is scaled to the screen
+    bool EnsureAaImages(uint32_t mode, uint32_t w, uint32_t h);
+    bool EnsureSmaaLookups();
+    void ScreenPass(VkImageView out, VkFormat fmt, uint32_t w, uint32_t h, bool clear, const char* hlsl,
+                    const char* vs_entry, const char* ps_entry, const StageView (&in)[3]);
+    VkImageView AntiAlias(Target& t);
     VkDescriptorSet AllocSet();
     void BindSet(const Alloc& vc, VkDeviceSize vc_size, const Alloc& dc, VkDeviceSize dc_size, const StageView views[4],
                  const VkSampler samplers[4]);
     void Blit(const BlitArgs& b);
     // present
     void UploadGammaRamp(uint32_t brightness, uint32_t contrast);
-    void PresentBlit(const Target& t, bool pillarbox);
+    void PresentBlit(VkImageView src, bool pillarbox);
     bool AcquireImage(uint32_t& index);
     void CountFps();
     void LogStats();
@@ -850,6 +860,9 @@ private:
     VkSampler linear_ = VK_NULL_HANDLE, point_ = VK_NULL_HANDLE;
     Image dummy_[4];  // 2D, 3D, cube, depth: what a stage without a texture reads
     Image lut_;
+    Image aa_[3];       // FXAA: [2] the result; SMAA: edges, blend weights, result
+    Image aa_lut_[2];   // SMAA's area and search lookups
+    uint32_t aa_mode_ = 0;
     uint32_t ramp_set_ = ~0u;
     bool gamma_ = false;
     // frames
@@ -2380,20 +2393,27 @@ VkPipeline VulkanBackend::EnsurePipeline(const PipeKey& k, VkShaderModule vs, Vk
 }
 
 VkPipeline VulkanBackend::EnsureBlitPipeline(VkFormat fmt, bool over) {
+    return EnsureScreenPipeline(kBlitHlsl, "vs", "psmain", fmt, over, false);
+}
+
+// a full screen pass of hlsl's vs_entry and ps_entry into fmt; clear: its pass starts cleared
+VkPipeline VulkanBackend::EnsureScreenPipeline(const char* hlsl, const char* vs_entry, const char* ps_entry,
+                                               VkFormat fmt, bool over, bool clear) {
     uint64_t h = Hash(&fmt, sizeof(fmt), over ? 0xB117 : 0xB11);
+    if (hlsl != kBlitHlsl) h = Hash(ps_entry, std::strlen(ps_entry), Hash(vs_entry, std::strlen(vs_entry), h ^ clear));
     auto it = pipelines_.find(h);
     if (it != pipelines_.end()) return it->second;
-    VkShaderModule vs = Module(kBlitHlsl, EShLangVertex, "vs");
-    VkShaderModule ps = Module(kBlitHlsl, EShLangFragment, "psmain");
+    VkShaderModule vs = Module(hlsl, EShLangVertex, vs_entry);
+    VkShaderModule ps = Module(hlsl, EShLangFragment, ps_entry);
     if (!vs || !ps) return pipelines_[h] = VK_NULL_HANDLE;
     VkPipelineShaderStageCreateInfo st[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},
                                              {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
     st[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
     st[0].module = vs;
-    st[0].pName = "vs";
+    st[0].pName = vs_entry;
     st[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     st[1].module = ps;
-    st[1].pName = "psmain";
+    st[1].pName = ps_entry;
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
@@ -2422,7 +2442,7 @@ VkPipeline VulkanBackend::EnsureBlitPipeline(VkFormat fmt, bool over) {
     ds.dynamicStateCount = 2;
     ds.pDynamicStates = dyn;
     VkGraphicsPipelineCreateInfo ci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    ci.renderPass = Pass(fmt, false, false, VK_IMAGE_LAYOUT_GENERAL);
+    ci.renderPass = Pass(fmt, false, clear, VK_IMAGE_LAYOUT_GENERAL);
     ci.stageCount = 2;
     ci.pStages = st;
     ci.pVertexInputState = &vi;
@@ -2538,6 +2558,245 @@ void VulkanBackend::Blit(const BlitArgs& b) {
     vkCmdDraw(cmd, 4, 1, 0, 0);
     if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
     if (trace_passes_) trace_draws_++;
+}
+
+// ---- anti-aliasing over the finished frame (app::Settings::post_aa), at render resolution before the upscale
+
+// FXAA 3.11 style: local contrast, edge direction, a short search along the edge, then one offset tap
+const char* kFxaaHlsl = R"(
+cbuffer P : register(b1) { float4 metrics; };
+Texture2D tex0 : register(t0);
+SamplerState LinearSampler : register(s0);
+struct FxaaV { float4 p : SV_Position; float2 uv : TEXCOORD0; };
+FxaaV vs_fxaa(uint id : SV_VertexID) {
+    FxaaV o;
+    o.uv = float2((id << 1) & 2, id & 2);
+    o.p = float4(o.uv * float2(2, -2) + float2(-1, 1), 0, 1);
+    return o;
+}
+float3 Tap(float2 uv) { return tex0.SampleLevel(LinearSampler, uv, 0).rgb; }
+float Luma(float2 uv) { return dot(Tap(uv), float3(0.299, 0.587, 0.114)); }
+float4 fxaa(FxaaV i) : SV_Target {
+    float2 px = metrics.xy, uv = i.uv;
+    float3 rgbM = Tap(uv);
+    float lM = dot(rgbM, float3(0.299, 0.587, 0.114));
+    float lN = Luma(uv + float2(0, -px.y)), lS = Luma(uv + float2(0, px.y));
+    float lW = Luma(uv + float2(-px.x, 0)), lE = Luma(uv + float2(px.x, 0));
+    float lMax = max(lM, max(max(lN, lS), max(lW, lE)));
+    float lMin = min(lM, min(min(lN, lS), min(lW, lE)));
+    float range = lMax - lMin;
+    if (range < max(0.0312, lMax * 0.125)) return float4(rgbM, 1);
+    float lNW = Luma(uv - px), lSE = Luma(uv + px);
+    float lNE = Luma(uv + float2(px.x, -px.y)), lSW = Luma(uv + float2(-px.x, px.y));
+    float edgeH = abs(lNW + lNE - 2 * lN) + 2 * abs(lW + lE - 2 * lM) + abs(lSW + lSE - 2 * lS);
+    float edgeV = abs(lNW + lSW - 2 * lW) + 2 * abs(lN + lS - 2 * lM) + abs(lNE + lSE - 2 * lE);
+    bool horz = edgeH >= edgeV;
+    float l1 = horz ? lN : lW, l2 = horz ? lS : lE;
+    float g1 = abs(l1 - lM), g2 = abs(l2 - lM);
+    float stepLen = horz ? px.y : px.x;
+    float lLocal = 0.5 * (l2 + lM);
+    if (g1 >= g2) {
+        stepLen = -stepLen;
+        lLocal = 0.5 * (l1 + lM);
+    }
+    float grad = 0.25 * max(g1, g2);
+    float2 cur = uv + (horz ? float2(0, stepLen * 0.5) : float2(stepLen * 0.5, 0));
+    float2 off = horz ? float2(px.x, 0) : float2(0, px.y);
+    float2 uv1 = cur - off, uv2 = cur + off;
+    float e1 = Luma(uv1) - lLocal, e2 = Luma(uv2) - lLocal;
+    bool d1 = abs(e1) >= grad, d2 = abs(e2) >= grad;
+    static const float kSteps[8] = {1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0};
+    for (int k = 0; k < 8 && !(d1 && d2); k++) {
+        if (!d1) {
+            uv1 -= off * kSteps[k];
+            e1 = Luma(uv1) - lLocal;
+            d1 = abs(e1) >= grad;
+        }
+        if (!d2) {
+            uv2 += off * kSteps[k];
+            e2 = Luma(uv2) - lLocal;
+            d2 = abs(e2) >= grad;
+        }
+    }
+    float dist1 = horz ? uv.x - uv1.x : uv.y - uv1.y;
+    float dist2 = horz ? uv2.x - uv.x : uv2.y - uv.y;
+    bool near1 = dist1 < dist2;
+    float edgeOff = 0.5 - min(dist1, dist2) / (dist1 + dist2);
+    bool correct = ((near1 ? e1 : e2) < 0) != (lM < lLocal);
+    float lAvg = (2 * (lN + lS + lW + lE) + lNW + lNE + lSW + lSE) / 12;
+    float sub = saturate(abs(lAvg - lM) / range);
+    sub = (-2 * sub + 3) * sub * sub;
+    float o = max(correct ? edgeOff : 0, sub * sub * 0.75);
+    return float4(Tap(uv + (horz ? float2(0, o * stepLen) : float2(o * stepLen, 0))), 1);
+}
+)";
+
+// SMAA 1x as d3d12.cpp runs it (kSmaaConfig, kSmaaPasses), at the high preset's search lengths
+const char* kSmaaConfig = R"(
+cbuffer P : register(b1) { float4 metrics; };
+#define SMAA_RT_METRICS metrics
+#define SMAA_CUSTOM_SL
+#define SMAA_THRESHOLD 0.1
+#define SMAA_MAX_SEARCH_STEPS 16
+#define SMAA_MAX_SEARCH_STEPS_DIAG 8
+#define SMAA_CORNER_ROUNDING 25
+SamplerState LinearSampler : register(s0);
+SamplerState PointSampler : register(s1);
+#define SMAATexture2D(tex) Texture2D tex
+#define SMAATexturePass2D(tex) tex
+#define SMAASampleLevelZero(tex, coord) tex.SampleLevel(LinearSampler, coord, 0)
+#define SMAASampleLevelZeroPoint(tex, coord) tex.SampleLevel(PointSampler, coord, 0)
+#define SMAASampleLevelZeroOffset(tex, coord, offset) tex.SampleLevel(LinearSampler, coord, 0, offset)
+#define SMAASample(tex, coord) tex.Sample(LinearSampler, coord)
+#define SMAASamplePoint(tex, coord) tex.Sample(PointSampler, coord)
+#define SMAASampleOffset(tex, coord, offset) tex.Sample(LinearSampler, coord, offset)
+#define SMAAGather(tex, coord) tex.Gather(LinearSampler, coord, 0)
+#define SMAA_FLATTEN [flatten]
+#define SMAA_BRANCH [branch]
+)";
+
+const char* kSmaaPasses = R"(
+Texture2D tex0 : register(t0);
+Texture2D tex1 : register(t1);
+Texture2D tex2 : register(t2);
+struct SmaaEdgeV { float4 p : SV_Position; float2 uv : TEXCOORD0; float4 o[3] : TEXCOORD1; };
+struct SmaaWeightV { float4 p : SV_Position; float2 uv : TEXCOORD0; float2 pix : TEXCOORD1; float4 o[3] : TEXCOORD2; };
+struct SmaaBlendV { float4 p : SV_Position; float2 uv : TEXCOORD0; float4 o : TEXCOORD1; };
+float4 corner(uint id, out float2 uv) {
+    uv = float2((id << 1) & 2, id & 2);
+    return float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+SmaaEdgeV vs_edges(uint id : SV_VertexID) {
+    SmaaEdgeV o;
+    o.p = corner(id, o.uv);
+    SMAAEdgeDetectionVS(o.uv, o.o);
+    return o;
+}
+SmaaWeightV vs_weights(uint id : SV_VertexID) {
+    SmaaWeightV o;
+    o.p = corner(id, o.uv);
+    SMAABlendingWeightCalculationVS(o.uv, o.pix, o.o);
+    return o;
+}
+SmaaBlendV vs_blend(uint id : SV_VertexID) {
+    SmaaBlendV o;
+    o.p = corner(id, o.uv);
+    SMAANeighborhoodBlendingVS(o.uv, o.o);
+    return o;
+}
+float4 smaa_edges(SmaaEdgeV i) : SV_Target { return float4(SMAALumaEdgeDetectionPS(i.uv, i.o, tex0), 0, 0); }
+float4 smaa_weights(SmaaWeightV i) : SV_Target { return SMAABlendingWeightCalculationPS(i.uv, i.pix, i.o, tex0, tex1, tex2, 0); }
+float4 smaa_blend(SmaaBlendV i) : SV_Target { return SMAANeighborhoodBlendingPS(i.uv, i.o, tex0, tex1); }
+)";
+
+constexpr VkFormat kSmaaEdgeFormat = VK_FORMAT_R8G8_UNORM;
+
+// SMAA's area (160 x 560, two channels) and search (64 x 16, one) lookups, left for sampling
+bool VulkanBackend::EnsureSmaaLookups() {
+    if (aa_lut_[1].image) return true;
+    struct Lookup {
+        VkFormat fmt;
+        uint32_t w, h, bpp;
+        const uint8_t* data;
+    };
+    const Lookup l[2] = {{VK_FORMAT_R8G8_UNORM, 160, 560, 2, kSmaaArea}, {VK_FORMAT_R8_UNORM, 64, 16, 1, kSmaaSearch}};
+    static_assert(sizeof(kSmaaArea) == 160 * 560 * 2 && sizeof(kSmaaSearch) == 64 * 16);
+    VkCommandBuffer cb = Cur().up;
+    for (int i = 0; i < 2; i++) {
+        ImageDesc d{l[i].fmt, l[i].w, l[i].h};
+        d.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (!CreateImage(aa_lut_[i], d)) {
+            Release(aa_lut_[0]);
+            Release(aa_lut_[1]);
+            return false;
+        }
+        VkDeviceSize bytes = VkDeviceSize(l[i].w) * l[i].h * l[i].bpp;
+        Alloc a = Upload(bytes, 16);
+        std::memcpy(a.cpu, l[i].data, size_t(bytes));
+        ImageBarrier(cb, aa_lut_[i].image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+        VkBufferImageCopy c{};
+        c.bufferOffset = a.off;
+        c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        c.imageExtent = {l[i].w, l[i].h, 1};
+        vkCmdCopyBufferToImage(cb, a.buf, aa_lut_[i].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+        ImageBarrier(cb, aa_lut_[i].image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                     VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    }
+    return true;
+}
+
+// the mode's targets at the frame's size: FXAA its result in [2], SMAA edges, weights and the result
+bool VulkanBackend::EnsureAaImages(uint32_t mode, uint32_t w, uint32_t h) {
+    if (aa_mode_ == mode && aa_[2].image && aa_[2].w == w && aa_[2].h == h) return true;
+    for (Image& im : aa_) Release(im);
+    aa_mode_ = mode;
+    const VkFormat f[3] = {kSmaaEdgeFormat, kBgra, kBgra};
+    for (int i = mode == 2 ? 0 : 2; i < 3; i++) {
+        ImageDesc d{f[i], w, h};
+        d.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (!CreateImage(aa_[i], d)) {
+            for (Image& im : aa_) Release(im);
+            return false;
+        }
+        InitTargetImage(aa_[i], true);
+    }
+    LOGI("vulkan: %s %ux%u", mode == 2 ? "SMAA" : "FXAA", w, h);
+    return true;
+}
+
+// one full screen triangle of hlsl into out (GENERAL layout), metrics for a w x h frame at b1
+void VulkanBackend::ScreenPass(VkImageView out, VkFormat fmt, uint32_t w, uint32_t h, bool clear, const char* hlsl,
+                               const char* vs_entry, const char* ps_entry, const StageView (&in)[3]) {
+    VkPipeline p = EnsureScreenPipeline(hlsl, vs_entry, ps_entry, fmt, false, clear);
+    if (!p) return;
+    BeginRenderingView(out, fmt, VK_IMAGE_LAYOUT_GENERAL, w, h, clear);
+    SetViewport(0, 0, float(w), float(h));
+    VkRect2D all{{0, 0}, {w, h}};
+    VkCommandBuffer cmd = Cur().cmd;
+    vkCmdSetScissor(cmd, 0, 1, &all);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+    float c[4] = {1.0f / float(w), 1.0f / float(h), float(w), float(h)};
+    Alloc cb = Upload(sizeof(c), ubo_align_);
+    std::memcpy(cb.cpu, c, sizeof(c));
+    StageView views[4] = {in[0], in[1], in[2], {dummy_[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+    VkSampler smp[4] = {linear_, point_, point_, point_};
+    BindSet(cb, sizeof(c), cb, sizeof(c), views, smp);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    if (timing_pass_) Cur().timed_passes[Cur().timed_count].draws++;
+    EndRendering(PassEnd::Auxiliary);
+}
+
+// the frame anti-aliased, or the target itself when that is off or can't run
+VkImageView VulkanBackend::AntiAlias(Target& t) {
+    uint32_t mode = app::Get().post_aa;
+    if (!mode) {
+        if (aa_mode_) {
+            for (Image& im : aa_) Release(im);
+            aa_mode_ = 0;
+        }
+        return t.im.view;
+    }
+    if ((mode == 2 && !EnsureSmaaLookups()) || !EnsureAaImages(mode, t.w, t.h)) return t.im.view;
+    const StageView none{dummy_[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const StageView frame{t.im.view, VK_IMAGE_LAYOUT_GENERAL};
+    if (mode == 1) {
+        ScreenPass(aa_[2].view, kBgra, t.w, t.h, false, kFxaaHlsl, "vs_fxaa", "fxaa", {frame, none, none});
+        return aa_[2].view;
+    }
+    static const std::string smaa = std::string(kSmaaConfig) + kSmaaHlsl + kSmaaPasses;
+    const StageView edges{aa_[0].view, VK_IMAGE_LAYOUT_GENERAL}, weights{aa_[1].view, VK_IMAGE_LAYOUT_GENERAL};
+    const StageView area{aa_lut_[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const StageView search{aa_lut_[1].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    // edge detection discards where there is no edge: its target starts each frame cleared
+    ScreenPass(aa_[0].view, kSmaaEdgeFormat, t.w, t.h, true, smaa.c_str(), "vs_edges", "smaa_edges",
+               {frame, none, none});
+    ScreenPass(aa_[1].view, kBgra, t.w, t.h, false, smaa.c_str(), "vs_weights", "smaa_weights",
+               {edges, area, search});
+    ScreenPass(aa_[2].view, kBgra, t.w, t.h, false, smaa.c_str(), "vs_blend", "smaa_blend", {frame, weights, none});
+    return aa_[2].view;
 }
 
 // ---- the title's calls
@@ -2992,7 +3251,7 @@ void VulkanBackend::UploadGammaRamp(uint32_t brightness, uint32_t contrast) {
 }
 
 // the frame onto the swapchain image, at the game's aspect, turned to the panel's orientation
-void VulkanBackend::PresentBlit(const Target& t, bool pillarbox) {
+void VulkanBackend::PresentBlit(VkImageView src, bool pillarbox) {
     bool sideways = transform_ & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
     float lw = float(sideways ? swap_h_ : swap_w_);
     float lh = float(sideways ? swap_w_ : swap_h_);
@@ -3001,7 +3260,7 @@ void VulkanBackend::PresentBlit(const Target& t, bool pillarbox) {
     float vh = vw / aspect;
     if (pillarbox) vw = vh * 4.0f / 3.0f;
     BlitArgs b;
-    b.src = t.im.view;
+    b.src = src;
     b.gamma = gamma_;
     b.fmt = swap_fmt_;
     b.xf[0] = vw / lw;
@@ -3171,12 +3430,13 @@ void VulkanBackend::Present(const Surface& front, bool pillarbox) {
     uint32_t img = kNone;
     if (!AcquireImage(img)) img = kNone;
     VkCommandBuffer cmd = Cur().cmd;
+    VkImageView shown = t && img != kNone ? AntiAlias(*t) : VK_NULL_HANDLE;
     if (img != kNone) {
         ImageBarrier(cmd, swap_images_[img], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
         BeginRenderingView(swap_views_[img], swap_fmt_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, swap_w_, swap_h_, true);
-        if (t) PresentBlit(*t, pillarbox);
+        if (shown) PresentBlit(shown, pillarbox);
         EndRendering(PassEnd::Present);
         ImageBarrier(cmd, swap_images_[img], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,

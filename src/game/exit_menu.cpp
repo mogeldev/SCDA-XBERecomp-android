@@ -138,7 +138,15 @@ X86_FUNC(sub_0018697A) {
         ctx.esp += 8;  // ret 4
         return;
     }
+#ifdef __ANDROID__
+    // Coop and Versus are left out (xbox_live.cpp): Solo stays 0, Credits is given the game's index 3
+    int16_t picked = list && list == g_list ? int16_t(R16(list + kListSelection)) : 0;
+    if (picked > 0) W16(list + kListSelection, 3);
     __imp__sub_0018697A(ctx, base);
+    if (picked > 0) W16(list + kListSelection, uint16_t(picked));
+#else
+    __imp__sub_0018697A(ctx, base);
+#endif
 }
 
 // title menu back handler (thiscall on its base at +0x2758, one argument, ret 4, returns 0 when a page took it): on
@@ -172,7 +180,8 @@ X86_FUNC(sub_001ACEAB) {
     }
     __imp__sub_001ACEAB(ctx, base);
 }
-
+
+
 // OnCancel of the same listener
 X86_EXTERN_FUNC(__imp__sub_001AD175);
 X86_FUNC(sub_001AD175) {

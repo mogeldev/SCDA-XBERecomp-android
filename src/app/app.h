@@ -51,9 +51,14 @@ struct Settings {
     uint32_t colour_blind = 0;       // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
     bool vsync = true;
     bool hdr_output = true;          // HDR10 on a display with Windows HDR on
+#ifdef __ANDROID__
+    uint32_t aniso = 4;              // 0 as the game asks
+#else
     uint32_t aniso = 0;              // 0 as the game asks
+#endif
     uint32_t msaa = 0;               // samples a pixel of the scene, 0 off
     bool smaa = false;               // over the finished frame, HUD included; combines with msaa
+    uint32_t post_aa = 2;            // Android Vulkan: 0 off, 1 FXAA, 2 SMAA, over the finished frame before upscaling
     uint32_t shadow_resolution = 512;  // shadow map edge, 0 follows the render scale; 512 is the console's, edge blur included
     uint32_t shadow_distance = 1;    // lights and their shadows turn off this many times further away, 1 to 8
     uint32_t shadow_filter = 1;      // 1 the console's shadow edge blur, 3 Chaos Theory's shader model 3 soft filter

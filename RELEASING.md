@@ -14,11 +14,11 @@ The first release cycle is **0.1.0**, beginning with `0.1.0-testing.1`. Developm
 - Fixes create a new version/tag (`testing.2`, `rc.2`, `0.1.1`, etc.). Tags may share a commit: the stable tag points at the approved RC commit.
 - Never silently replace published assets. Publish SHA-256 checksums, source commit and signing-certificate fingerprint. A withdrawn build gets a prominent warning; its version is never reused.
 - Increment Android `versionCode` for every new APK build/version. It must not go backwards even though the version name is restarting at 0.1.0. The first testing build uses code 3; codes 1 and 2 were already used during development.
-- Promote RC to stable by copying the exact approved APK and matching builder/checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
+- Promote RC to stable by copying the exact approved APK and checksums. Do not rebuild or edit its embedded RC version name/code just for promotion. Record both GitHub stable version and embedded Android version in the release notes.
 - **Debug keys only for Testing, RC and Stable.** Both Gradle debug and release variants explicitly use `signingConfigs.debug`; no separate production signing key is used. A release variant signed with a debug key is not necessarily a debuggable app.
 - Reuse and privately back up the same maintainer debug keystore (`~/.android/debug.keystore`) for published updates. Another machine's automatically generated debug key will differ: Android refuses an in-place update signed by a different certificate. Verify the certificate against the previous APK and publish its SHA-256 fingerprint. Never commit/upload the keystore or expose its private key; the standard debug credentials are not a security boundary. Do not recommend uninstalling an existing game just to bypass a signing mismatch, because that deletes app data.
-- **Every future release APK must include both `arm64-v8a` and `x86_64` runtime libraries.** Build without `-PdevCode`; never publish private game code/assets. Inspect the packaged ABIs before uploading. Both ABIs also carry the on-device compiler/import tools (from 0.2.0-testing.3; earlier releases compile on ARM64 only). The matching Windows builder's dual-ABI game ZIP remains an alternative; the importer selects the library for the app's process ABI. The corresponding-source bundle must cover both pinned toolchain package sets (`tools/on-device-probe/packages-arm64-v8a.json` and `packages.json`). Do not replace older published APKs to add an ABI; publish a new version.
-- **The Windows builder follows the APK version.** `tools/android-builder/package.ps1` reads `versionName` from `android/build.gradle` and creates `SCDA-Android-<version>-Windows-Builder.zip`; the GUI shows that version. Build both from the same commit and publish them together under the same version. Every game ZIP carries `scda-version.txt`; the app refuses a prebuilt ZIP from another builder version (ZIPs from older unversioned builders are still accepted).
+- **Every future release APK must include both `arm64-v8a` and `x86_64` runtime libraries.** Build without `-PdevCode`; never publish private game code/assets. Inspect the packaged ABIs before uploading. Both ABIs also carry the on-device compiler/import tools (from 0.2.0-testing.3; earlier releases compile on ARM64 only). The corresponding-source bundle must cover both pinned toolchain package sets (`tools/on-device-probe/packages-arm64-v8a.json` and `packages.json`). Do not replace older published APKs to add an ABI; publish a new version.
+- **The Windows builder is retired from 0.3.0-testing.1.** Releases attach only the APK, corresponding source and SHA-256 sums; do not build or publish `SCDA-Android-<version>-Windows-Builder.zip` again. Players compile on the device (ARM64 and x86_64). Earlier builder assets stay on their releases, marked retired. Builder ZIPs carry `scda-version.txt`; the app refuses a versioned ZIP whose version differs from the app (from 0.3.0 every versioned builder ZIP), unversioned older ZIPs are still accepted.
 - Creating a tag does not build, install, upload or approve binaries. Publishing and stable promotion are separate, manually approved actions. No automatic publishing on pushes/tags is configured.
 
 ## Gates
@@ -35,7 +35,7 @@ Complete the following on the actual signed release candidate; features are froz
 
 - [ ] Fresh direct ISO/XISO import and automatic compilation/launch.
 - [ ] Archive import (ZIP, 7z, RAR/RAR5, TAR/compressed TAR) and extracted-folder picker; disclose untested variants.
-- [ ] Windows-builder prebuilt ZIP from the same version imports; a ZIP from another builder version is refused with a clear message.
+- [ ] A ZIP from a retired Windows builder is refused with a clear message pointing to on-device compilation.
 - [ ] Back cancellation, verified-object resume, force-stop/reopen; no incomplete library publication.
 - [ ] Manual picker cancellation/errors and storage-failure cleanup without destroying existing game files.
 - [ ] Production-package upgrade preserves game files, saves/settings, launcher entry and signing compatibility.
@@ -47,7 +47,7 @@ Complete the following on the actual signed release candidate; features are froz
 
 - [ ] RC gates passed within the documented supported scope; no known release-blocking regression.
 - [ ] Human explicitly approves stable promotion.
-- [ ] Stable tag points to approved RC source commit; APK/builder/checksum bytes are unchanged.
+- [ ] Stable tag points to approved RC source commit; APK/checksum bytes are unchanged.
 - [ ] Publish setup/update instructions, supported game hash, known limitations, device coverage, embedded APK version/code and signing fingerprint.
 - [ ] Mark stable Latest; retain earlier stable releases and identify the last known-good release when withdrawing a broken one.
 
@@ -90,6 +90,10 @@ Corresponding source now also includes the full pinned Mesa, Vauzi recipe/patch,
 ## Published testing version: 0.2.0-testing.3
 
 Android `0.2.0-testing.3` / code 12, same debug certificate; prerelease, not Latest. Adds on-device compilation on x86_64: the APK bundles the pinned LLVM/Clang/LLD 21.1.8 compiler/import tools for both ABIs (about 219 MB instead of 137 MB). The user confirmed a full ISO import, compile and getting in-game on the Android 15 x86_64 emulator and on the ARM64 phone, using the pre-bump test build of the same source. The source bundle adds the pinned x86_64 package manifest; libiconv source (same upstream 1.19.1) covers both ABIs.
+
+## Published testing version: 0.3.0-testing.1
+
+Android `0.3.0-testing.1` / code 13, same debug certificate; prerelease, not Latest. Adds the Android ANTI-ALIASING option (SMAA default, FXAA, off), 4x anisotropic filtering by default, a quiet update check at each app start (notice only when a newer release exists) and a game mode menu limited to Solo, Credits and Exit. The user confirmed the menu change and the FXAA/SMAA test build (barely any performance impact) on the Adreno 710 phone; the exact version-bumped APK was not separately device-tested. Game code and toolchains unchanged. **The Windows builder is retired**: no builder asset is published from this version on; the 0.2.0-testing.3 builder stays attached to its release, marked retired. Assets: APK, corresponding source and SHA-256 sums.
 
 ## Previous testing version: 0.2.0-testing.2
 

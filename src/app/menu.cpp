@@ -49,6 +49,8 @@ constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"OFF", "2x", "4x", "8x", "16x"};
 constexpr uint32_t kMsaaValues[] = {0, 2, 4, 8};
 const char* const kMsaaNames[] = {"OFF", "2x", "4x", "8x"};
+constexpr uint32_t kPostAaValues[] = {0, 1, 2};
+const char* const kPostAaNames[] = {"OFF", "FXAA (FAST)", "SMAA"};
 constexpr uint32_t kAoValues[] = {0, 1, 2};
 const char* const kAoNames[] = {"OFF", "SSAO", "GTAO"};
 constexpr uint32_t kFmvScales[] = {0, 1};
@@ -338,7 +340,7 @@ enum RowId {
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
     kVibration, kGyroAiming, kGyroSource, kGyroSensitivity, kGyroAxis, kGyroInvertX, kGyroInvertY, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
     kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow, kVulkanDriver,
-    kTouchControls, kTouchOpacity
+    kTouchControls, kTouchOpacity, kPostAa
 };
 
 using rows::Kind;
@@ -362,7 +364,7 @@ bool DesktopHides(int id) {
     return false;
 #else
     return id == kVulkanDriver || id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow || id == kTouchControls ||
-           id == kTouchOpacity;
+           id == kTouchOpacity || id == kPostAa;
 #endif
 }
 
@@ -417,6 +419,7 @@ constexpr Row kSettingsRows[] = {
     {Kind::Value, kAmbientOcclusion, "AMBIENT OCCLUSION"},
     {Kind::Value, kMsaa, "MSAA"},
     {Kind::Value, kSmaa, "SMAA"},
+    {Kind::Value, kPostAa, "ANTI-ALIASING"},
     {Kind::Value, kAniso, "ANISOTROPIC FILTERING"},
     {Kind::Value, kShadowResolution, "SHADOW RESOLUTION"},
     {Kind::Value, kShadowDistance, "SHADOW DISTANCE"},
@@ -683,6 +686,9 @@ bool StepGraphicsRow(int id, int step, Settings& s, char (&text)[64]) {
             return true;
         case kAniso:
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
+            return true;
+        case kPostAa:
+            std::snprintf(text, sizeof(text), "%s", kPostAaNames[StepTable(kPostAaValues, s.post_aa, step)]);
             return true;
         case kShadowResolution: {
             uint32_t size = kShadowSizes[StepTable(kShadowSizes, s.shadow_resolution, step)];

@@ -24,6 +24,11 @@ constexpr uint32_t kOnlineName = 0x546578, kOptionsName = 0x546598;
 // return addresses of the calls that add the Xbox Live items
 constexpr uint32_t kSoloItem = 0x1A67DA;   // solo main menu AddItem(text, 0), the last of its list
 constexpr uint32_t kPauseItem = 0x18CBC0;  // pause menu item (list, id 8, FString), by value
+#ifdef __ANDROID__
+// Android has no co-op or versus: the game mode list's Coop and Versus items (title menu setup sub_00185C2F) are
+// left out, and exit_menu.cpp maps the selection back to the game's indices
+constexpr uint32_t kCoopItem = 0x186190, kVersusItem = 0x1861AE;
+#endif
 constexpr uint32_t kFStringFree = 0x36116;
 
 template <typename F>
@@ -57,7 +62,11 @@ X86_FUNC(sub_00291D64) {
 // list AddItem (thiscall(text, flag), ret 8, returns the index)
 X86_EXTERN_FUNC(__imp__sub_002C5160);
 X86_FUNC(sub_002C5160) {
-    if (R32(ctx.esp) != kSoloItem) return __imp__sub_002C5160(ctx, base);
+    uint32_t from = R32(ctx.esp);
+#ifdef __ANDROID__
+    if (from == kCoopItem || from == kVersusItem) from = kSoloItem;
+#endif
+    if (from != kSoloItem) return __imp__sub_002C5160(ctx, base);
     ctx.esp += 0xC;  // ret 8: the item is never added
 }
 
