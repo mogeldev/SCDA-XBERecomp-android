@@ -1,6 +1,12 @@
 # SCDA Android port: notes
 
-Current release: 0.3.0-testing.1 (anti-aliasing, anisotropic default, start-up update check, campaign-only main menu). 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.3.0-testing.2 (launcher ZIP log export). 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+
+## 0.3.0-testing.2: error log export
+
+- Launcher **Export error logs (ZIP)** saves through Android's document picker; no storage permission or automatic upload.
+- Includes saved `scda*.log` runs, the last setup error (persisted on import/compile failure) and the last Vulkan report when available. No game files or saves; paths may appear inside logs, so review before sharing. No full logcat capture.
+- User-exported ZIP validated: 13 game logs, README and Vulkan report; CRC checks passed. Exact version-bumped APK not separately device-tested. Missing logs and ZIP contents covered by the host test.
 
 ## 0.3.0-testing.1: anti-aliasing, defaults, update check, main menu
 

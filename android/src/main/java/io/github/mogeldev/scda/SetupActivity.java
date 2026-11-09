@@ -20,6 +20,7 @@ import org.libsdl.app.SDLActivity;
 // Setup is separate from SDL so native game threads never start during import or the document picker.
 public class SetupActivity extends Activity {
     private static final int PICK_ZIP = 1;
+    private static final int EXPORT_LOGS = 3;
     private TextView status;
     private Button select;
     private Button folder;
@@ -47,6 +48,19 @@ public class SetupActivity extends Activity {
         setup.version(GameImport.appVersion != null ? GameImport.appVersion : "unknown version");
         DriverChoice.attach(setup.driver);
         setup.report.setOnClickListener(view -> DeviceReport.show(this));
+        setup.logs.setOnClickListener(view -> setup.message("Export error logs",
+            "The ZIP contains saved game logs, the last setup error and Vulkan diagnostics. Logs may contain file paths. Review before sharing. No game files or saves are included.",
+            "Save ZIP", () -> {
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "scda-error-logs.zip");
+                try {
+                    picking = true;
+                    startActivityForResult(intent, EXPORT_LOGS);
+                } catch (ActivityNotFoundException e) {
+                    picking = false;
+                    status.setText("No system file picker is available on this device.");
+                }
+            }));
         setup.update.setOnClickListener(view -> checkUpdates(false));
         setup.play.setOnClickListener(view -> launchGame());
         select = setup.select;
@@ -240,6 +254,30 @@ public class SetupActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == EXPORT_LOGS) {
+            picking = false;
+            if (result != RESULT_OK || data == null || data.getData() == null) return;
+            Uri destination = data.getData();
+            setup.logs.setEnabled(false);
+            new Thread(() -> {
+                String message;
+                try (java.io.OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+                    if (output == null) throw new IOException("Cannot open destination.");
+                    ErrorLogs.write(output, getExternalFilesDir(null), getFilesDir());
+                    message = "Error logs exported.";
+                } catch (IOException | RuntimeException e) {
+                    message = "Export failed. The destination may contain an incomplete ZIP; delete it and retry.";
+                    android.util.Log.e("SCDALogs", "Export failed", e);
+                }
+                String text = message;
+                runOnUiThread(() -> {
+                    if (isDestroyed() || isFinishing()) return;
+                    setup.logs.setEnabled(true);
+                    status.setText(text);
+                });
+            }, "SCDA log export").start();
+            return;
+        }
         if (request != PICK_ZIP && !(request == 2 && supportsLocalCompilation())) return;
         picking = false;
         setSelectionEnabled(true);
@@ -289,6 +327,12 @@ public class SetupActivity extends Activity {
             } catch (IOException | RuntimeException e) {
                 error = e.getMessage() != null ? e.getMessage() : e.toString();
                 android.util.Log.e("SCDAImport", "Import failed", e);
+                try (java.io.PrintWriter log = new java.io.PrintWriter(new File(getFilesDir(), "last-setup-error.txt"), "UTF-8")) {
+                    log.println("App: " + GameImport.appVersion + "\nTime: " + new java.util.Date());
+                    e.printStackTrace(log);
+                } catch (IOException ignored) {
+                    android.util.Log.w("SCDAImport", "Could not save setup error");
+                }
             }
             final String failure = error;
             runOnUiThread(() -> {

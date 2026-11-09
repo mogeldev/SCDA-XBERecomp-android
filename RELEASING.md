@@ -95,6 +95,10 @@ Android `0.2.0-testing.3` / code 12, same debug certificate; prerelease, not Lat
 
 Android `0.3.0-testing.1` / code 13, same debug certificate; prerelease, not Latest. Adds the Android ANTI-ALIASING option (SMAA default, FXAA, off), 4x anisotropic filtering by default, a quiet update check at each app start (notice only when a newer release exists) and a game mode menu limited to Solo, Credits and Exit. The user confirmed the menu change and the FXAA/SMAA test build (barely any performance impact) on the Adreno 710 phone; the exact version-bumped APK was not separately device-tested. Game code and toolchains unchanged. **The Windows builder is retired**: no builder asset is published from this version on; the 0.2.0-testing.3 builder stays attached to its release, marked retired. Assets: APK, corresponding source and SHA-256 sums.
 
+## Published testing version: 0.3.0-testing.2
+
+Android `0.3.0-testing.2` / code 14, same debug certificate; prerelease, not Latest. Adds launcher ZIP export of saved game logs, last setup error and Vulkan diagnostics through the document picker. No game files, saves or automatic upload; logs may contain paths. User-exported test-build ZIP passed integrity/content checks; exact version-bumped APK not separately device-tested. Native code and toolchains unchanged. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
+
 ## Previous testing version: 0.2.0-testing.2
 
 Android `0.2.0-testing.2` / code 11, same debug certificate; prerelease, not Latest. Adds the manual **Share device report** launcher entry: preview, then Android share sheet or an editable GitHub issue draft. No upload client or background transmission. The report holds app/device/Android/ABI data, driver selection, Turnip eligibility and the last successful Vulkan-device initialization snapshot (ignored if older than the installed app). No identifiers, accounts, paths, logs or game files. Emulator-checked; not yet checked on physical hardware. Toolchain/Turnip sources unchanged from 0.2.0-testing.1; the source bundle is rebuilt with the new project source.

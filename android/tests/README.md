@@ -25,6 +25,7 @@ javac -d out/import-tests android/src/main/java/io/github/mogeldev/scda/GameImpo
 java -cp out/import-tests io.github.mogeldev.scda.CompileCacheTest
 java -cp out/import-tests io.github.mogeldev.scda.GameSourceTest
 javac -d out/import-tests android/src/main/java/io/github/mogeldev/scda/UpdateCheck.java android/tests/UpdateCheckTest.java && java -cp out/import-tests io.github.mogeldev.scda.UpdateCheckTest
+javac -d out/import-tests android/src/main/java/io/github/mogeldev/scda/ErrorLogs.java android/tests/ErrorLogsTest.java && java -cp out/import-tests io.github.mogeldev.scda.ErrorLogsTest
 python -m unittest discover -s android/tests -p "test_*.py"
 ```
 
