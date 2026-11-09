@@ -32,3 +32,4 @@ scda.toml
 /android/.cxx/
 /android/build/
 /android/local.properties
+__pycache__/
