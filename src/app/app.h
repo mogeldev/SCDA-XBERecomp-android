@@ -71,6 +71,9 @@ struct Settings {
     bool scaled_presentation = true;
     bool native_effect_size = true;
     bool fast_glow = false;
+    // how much the GPU waits between render passes: 0 automatic (relaxed on Mali), 1 relaxed, 2 strict. Relaxed is
+    // faster on Mali and may glitch on a driver that needs the full wait
+    uint32_t gpu_sync = 0;
 #ifdef __ANDROID__
     bool turnip = false;  // shared with the launcher's recovery selector, effective next process start
 #endif
@@ -220,6 +223,8 @@ bool Shown(const Row& row);
 // false for a row shown greyed that takes no change: the shader model 3.0 features at 1.1, HDR output without
 // an HDR display
 bool Enabled(const Row& row);
+// what a value row does, for the game menu's HELP box: in the game's language; empty for none
+std::u16string Help(const Row& row);
 }  // namespace rows
 
 // the console on the backtick key, drawn by DrawUi

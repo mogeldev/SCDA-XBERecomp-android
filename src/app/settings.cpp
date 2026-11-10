@@ -147,6 +147,7 @@ void Load() {
     s.scaled_presentation = t["scaled_presentation"].value_or(s.scaled_presentation);
     s.native_effect_size = t["native_effect_size"].value_or(s.native_effect_size);
     s.fast_glow = t["fast_glow"].value_or(s.fast_glow);
+    s.gpu_sync = std::min(t["gpu_sync"].value_or(s.gpu_sync), 2u);
     s.async_shaders = t["async_shaders"].value_or(s.async_shaders);
     s.custom_textures = t["custom_textures"].value_or(s.custom_textures);
     s.dump_textures = t["dump_textures"].value_or(s.dump_textures);
@@ -236,6 +237,7 @@ toml::table Table() {
                   {"scaled_presentation", s.scaled_presentation},
                   {"native_effect_size", s.native_effect_size},
                   {"fast_glow", s.fast_glow},
+                  {"gpu_sync", int64_t(s.gpu_sync)},
                   {"async_shaders", s.async_shaders},
                   {"custom_textures", s.custom_textures},
                   {"dump_textures", s.dump_textures},

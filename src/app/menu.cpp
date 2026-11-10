@@ -51,6 +51,7 @@ constexpr uint32_t kMsaaValues[] = {0, 2, 4, 8};
 const char* const kMsaaNames[] = {"OFF", "2x", "4x", "8x"};
 constexpr uint32_t kPostAaValues[] = {0, 1, 2};
 const char* const kPostAaNames[] = {"OFF", "FXAA (FAST)", "SMAA"};
+const char* const kGpuSyncNames[] = {"AUTOMATIC", "RELAXED (FASTER)", "STRICT"};
 constexpr uint32_t kAoValues[] = {0, 1, 2};
 const char* const kAoNames[] = {"OFF", "SSAO", "GTAO"};
 constexpr uint32_t kFmvScales[] = {0, 1};
@@ -340,7 +341,7 @@ enum RowId {
     kSensitivityVertical, kPadDeadZone, kPadHorizontal, kPadVertical, kPadAimHorizontal, kPadAimVertical,
     kVibration, kGyroAiming, kGyroSource, kGyroSensitivity, kGyroAxis, kGyroInvertX, kGyroInvertY, kGyroButton, kGyroButtonMode, kGyroRecenter, kGyroCalibrate,
     kTextureReplacement, kTextureDumping, kDumpFormat, kScaledPresentation, kNativeEffectSize, kFastGlow, kVulkanDriver,
-    kTouchControls, kTouchOpacity, kPostAa
+    kTouchControls, kTouchOpacity, kPostAa, kGpuSync
 };
 
 using rows::Kind;
@@ -364,7 +365,7 @@ bool DesktopHides(int id) {
     return false;
 #else
     return id == kVulkanDriver || id == kScaledPresentation || id == kNativeEffectSize || id == kFastGlow || id == kTouchControls ||
-           id == kTouchOpacity || id == kPostAa;
+           id == kTouchOpacity || id == kPostAa || id == kGpuSync;
 #endif
 }
 
@@ -429,6 +430,7 @@ constexpr Row kSettingsRows[] = {
     {Kind::Value, kScaledPresentation, "SCREEN UPSCALING"},
     {Kind::Value, kNativeEffectSize, "GLOW RESOLUTION"},
     {Kind::Value, kFastGlow, "GLOW QUALITY"},
+    {Kind::Value, kGpuSync, "GPU SYNC"},
     {Kind::Heading, -1, "GENERAL"},
     {Kind::Value, kSkipIntros, "SKIP INTROS"},
     {Kind::Value, kPauseOnFocusLoss, "PAUSE ON FOCUS LOSS"},
@@ -720,6 +722,9 @@ bool StepGraphicsRow(int id, int step, Settings& s, char (&text)[64]) {
         case kFastGlow:
             if (step) s.fast_glow = StepIndex(s.fast_glow, step, 2);
             std::snprintf(text, sizeof(text), "%s", s.fast_glow ? "FAST (MAY FLICKER)" : "HIGH (DEFAULT)");
+            return true;
+        case kGpuSync:
+            StepName(s.gpu_sync, kGpuSyncNames, step, text);
             return true;
         case kShadowFilter:
             if (step) s.shadow_filter = StepIndex(s.shadow_filter >= 3, step, 2) ? 3 : 1;
@@ -1440,6 +1445,219 @@ void Choose(const Row& row, int index) {
     g_pick = index;
     RowText(row.id, 1);
     g_pick = -1;
+}
+
+std::u16string Help(const Row& row) {
+    // text in app::kLanguages order after int, as translations.cpp
+    struct Entry {
+        int id;
+        std::string_view english;
+        std::u16string_view text[4];
+    };
+    static constexpr Entry kHelp[] = {
+        {kRenderResolution, "Renders the 3D picture at this share of the screen resolution. Lower is faster and blurrier, above 100% is sharper and slower.",
+         {u"Calcule l'image 3D à cette part de la résolution de l'écran. Plus bas est plus rapide et plus flou, au-dessus de 100% plus net et plus lent.",
+          u"Rendert das 3D-Bild mit diesem Anteil der Bildschirmauflösung. Niedriger ist schneller und unschärfer, über 100% schärfer und langsamer.",
+          u"Calcola l'immagine 3D a questa quota della risoluzione dello schermo. Più basso è più veloce e più sfocato, sopra il 100% più nitido e più lento.",
+          u"Calcula la imagen 3D con esta parte de la resolución de la pantalla. Más bajo es más rápido y más borroso, por encima del 100% más nítido y más lento."}},
+        {kFov, "How wide the camera sees. Higher values show more of the surroundings.",
+         {u"Largeur de vue de la caméra. Des valeurs plus élevées montrent davantage les environs.",
+          u"Wie weit die Kamera sieht. Höhere Werte zeigen mehr von der Umgebung.",
+          u"Ampiezza della visuale della telecamera. Valori più alti mostrano più ambiente.",
+          u"Amplitud de visión de la cámara. Los valores más altos muestran más entorno."}},
+        {kBrightness, "Makes the whole picture brighter or darker.",
+         {u"Rend toute l'image plus claire ou plus sombre.",
+          u"Macht das gesamte Bild heller oder dunkler.",
+          u"Rende tutta l'immagine più chiara o più scura.",
+          u"Hace toda la imagen más clara o más oscura."}},
+        {kContrast, "Difference between the dark and bright parts of the picture.",
+         {u"Écart entre les zones sombres et claires de l'image.",
+          u"Unterschied zwischen dunklen und hellen Bildbereichen.",
+          u"Differenza tra le zone scure e chiare dell'immagine.",
+          u"Diferencia entre las zonas oscuras y claras de la imagen."}},
+        {kMaxFps, "Upper limit for frames per second. A lower limit saves battery and heat.",
+         {u"Limite du nombre d'images par seconde. Une limite plus basse économise la batterie et réduit la chauffe.",
+          u"Obergrenze für Bilder pro Sekunde. Eine niedrigere Grenze spart Akku und Wärme.",
+          u"Limite dei fotogrammi al secondo. Un limite più basso risparmia batteria e calore.",
+          u"Límite de fotogramas por segundo. Un límite más bajo ahorra batería y calor."}},
+        {kFpsCounter, "Shows the current frames per second in the corner of the screen.",
+         {u"Affiche le nombre d'images par seconde dans le coin de l'écran.",
+          u"Zeigt die aktuellen Bilder pro Sekunde in der Bildschirmecke.",
+          u"Mostra i fotogrammi al secondo nell'angolo dello schermo.",
+          u"Muestra los fotogramas por segundo en la esquina de la pantalla."}},
+        {kFmvScale, "Size of the video cutscenes on screen.",
+         {u"Taille des cinématiques vidéo à l'écran.",
+          u"Größe der Videosequenzen auf dem Bildschirm.",
+          u"Dimensione dei filmati sullo schermo.",
+          u"Tamaño de los vídeos en pantalla."}},
+        {kPostAa, "Smooths jagged edges. FXAA is fast and slightly soft, SMAA is sharper and costs more performance.",
+         {u"Lisse les bords en escalier. FXAA est rapide et un peu flou, SMAA est plus net et coûte plus de performances.",
+          u"Glättet Treppenkanten. FXAA ist schnell und etwas weich, SMAA ist schärfer und kostet mehr Leistung.",
+          u"Leviga i bordi seghettati. FXAA è veloce e un po' morbido, SMAA è più nitido e costa più prestazioni.",
+          u"Suaviza los bordes dentados. FXAA es rápido y algo suave, SMAA es más nítido y cuesta más rendimiento."}},
+        {kAniso, "Keeps textures sharp at flat viewing angles. Higher values cost a little performance.",
+         {u"Garde les textures nettes sous un angle rasant. Des valeurs plus élevées coûtent un peu de performances.",
+          u"Hält Texturen bei flachem Blickwinkel scharf. Höhere Werte kosten etwas Leistung.",
+          u"Mantiene nitide le texture viste di taglio. Valori più alti costano un po' di prestazioni.",
+          u"Mantiene nítidas las texturas vistas en ángulo. Los valores más altos cuestan algo de rendimiento."}},
+        {kShadowResolution, "Detail of the shadows. 512 is the original, higher is sharper and slower.",
+         {u"Niveau de détail des ombres. 512 est l'original, plus haut est plus net et plus lent.",
+          u"Detailgrad der Schatten. 512 ist das Original, höher ist schärfer und langsamer.",
+          u"Dettaglio delle ombre. 512 è l'originale, più alto è più nitido e più lento.",
+          u"Detalle de las sombras. 512 es el original, más alto es más nítido y más lento."}},
+        {kShadowDistance, "How far away lights still cast shadows. Higher values cost performance.",
+         {u"Distance jusqu'à laquelle les lumières projettent des ombres. Des valeurs plus élevées coûtent des performances.",
+          u"Bis zu welcher Entfernung Lichter noch Schatten werfen. Höhere Werte kosten Leistung.",
+          u"Distanza fino alla quale le luci proiettano ombre. Valori più alti costano prestazioni.",
+          u"Distancia hasta la que las luces proyectan sombras. Los valores más altos cuestan rendimiento."}},
+        {kVulkanDriver, "Which graphics driver the game uses. Turnip is an alternative driver for some Adreno chips. Takes effect after a restart.",
+         {u"Pilote graphique utilisé par le jeu. Turnip est un pilote alternatif pour certaines puces Adreno. Prend effet après un redémarrage.",
+          u"Welchen Grafiktreiber das Spiel nutzt. Turnip ist ein alternativer Treiber für manche Adreno-Chips. Wirkt nach einem Neustart.",
+          u"Driver grafico usato dal gioco. Turnip è un driver alternativo per alcuni chip Adreno. Ha effetto dopo un riavvio.",
+          u"Controlador gráfico que usa el juego. Turnip es un controlador alternativo para algunos chips Adreno. Se aplica tras reiniciar."}},
+        {kScaledPresentation, "Display lets the screen hardware enlarge the picture, which is faster. GPU makes the graphics chip do it.",
+         {u"Avec Écran, le matériel d'affichage agrandit l'image, ce qui est plus rapide. Avec GPU, la puce graphique s'en charge.",
+          u"Bei Display vergrößert die Bildschirm-Hardware das Bild, das ist schneller. Bei GPU übernimmt das der Grafikchip.",
+          u"Con Display l'hardware dello schermo ingrandisce l'immagine, ed è più veloce. Con GPU lo fa il chip grafico.",
+          u"Con Pantalla, el hardware de la pantalla amplía la imagen, lo que es más rápido. Con GPU lo hace el chip gráfico."}},
+        {kNativeEffectSize, "Resolution of the glow and brightness effects. Original keeps the console's size and is faster, High follows the render resolution.",
+         {u"Résolution des effets de lueur et de luminosité. Originale garde la taille de la console et est plus rapide, Élevée suit la résolution de rendu.",
+          u"Auflösung der Leucht- und Helligkeitseffekte. Original behält die Größe der Konsole und ist schneller, Hoch folgt der Render-Auflösung.",
+          u"Risoluzione degli effetti di bagliore e luminosità. Originale mantiene la dimensione della console ed è più veloce, Alta segue la risoluzione di rendering.",
+          u"Resolución de los efectos de brillo y luminosidad. Original mantiene el tamaño de la consola y es más rápido, Alta sigue la resolución de renderizado."}},
+        {kFastGlow, "How carefully the glow effect is shrunk. Fast saves time, but bright reflections such as the sun can flicker.",
+         {u"Soin apporté à la réduction de l'effet de lueur. Rapide gagne du temps, mais les reflets vifs comme le soleil peuvent scintiller.",
+          u"Wie sorgfältig der Leuchteffekt verkleinert wird. Schnell spart Zeit, helle Spiegelungen wie die Sonne können aber flackern.",
+          u"Cura con cui l'effetto bagliore viene ridotto. Veloce fa risparmiare tempo, ma i riflessi intensi come il sole possono sfarfallare.",
+          u"Cuidado con que se reduce el efecto de brillo. Rápido ahorra tiempo, pero los reflejos intensos como el sol pueden parpadear."}},
+        {kGpuSync, "How strictly the graphics chip waits between drawing steps. Relaxed is clearly faster on Mali chips. If effects flicker or look broken, choose Strict. Automatic uses Relaxed on Mali only.",
+         {u"Rigueur avec laquelle la puce graphique attend entre les étapes de dessin. Souple est nettement plus rapide sur les puces Mali. Si des effets scintillent ou semblent abîmés, choisissez Stricte. Automatique n'utilise Souple que sur Mali.",
+          u"Wie streng der Grafikchip zwischen den Zeichenschritten wartet. Locker ist auf Mali-Chips deutlich schneller. Wenn Effekte flackern oder fehlerhaft aussehen, Streng wählen. Automatisch nutzt Locker nur auf Mali.",
+          u"Rigore con cui il chip grafico attende tra le fasi di disegno. Rilassata è nettamente più veloce sui chip Mali. Se gli effetti sfarfallano o appaiono rovinati, scegli Rigorosa. Automatico usa Rilassata solo su Mali.",
+          u"Rigor con que el chip gráfico espera entre los pasos de dibujo. Relajada es claramente más rápida en chips Mali. Si los efectos parpadean o se ven rotos, elige Estricta. Automático usa Relajada solo en Mali."}},
+        {kSkipIntros, "Skips the logo videos when the game starts.",
+         {u"Passe les vidéos de logos au lancement du jeu.",
+          u"Überspringt die Logo-Videos beim Spielstart.",
+          u"Salta i video dei loghi all'avvio del gioco.",
+          u"Omite los vídeos de logotipos al iniciar el juego."}},
+        {kLanguage, "Language of the game. Takes effect after a restart.",
+         {u"Langue du jeu. Prend effet après un redémarrage.",
+          u"Sprache des Spiels. Wirkt nach einem Neustart.",
+          u"Lingua del gioco. Ha effetto dopo un riavvio.",
+          u"Idioma del juego. Se aplica tras reiniciar."}},
+        {kAudioOutput, "Speaker layout the game mixes its sound for.",
+         {u"Disposition des haut-parleurs pour laquelle le jeu mixe le son.",
+          u"Lautsprecher-Anordnung, für die das Spiel den Ton abmischt.",
+          u"Disposizione degli altoparlanti per cui il gioco mixa l'audio.",
+          u"Disposición de altavoces para la que el juego mezcla el sonido."}},
+        {kPadHorizontal, "How fast the camera turns left and right with the stick.",
+         {u"Vitesse à laquelle la caméra tourne à gauche et à droite avec le stick.",
+          u"Wie schnell sich die Kamera mit dem Stick nach links und rechts dreht.",
+          u"Velocità con cui la telecamera gira a sinistra e a destra con la levetta.",
+          u"Velocidad con que la cámara gira a izquierda y derecha con el stick."}},
+        {kPadVertical, "How fast the camera turns up and down with the stick.",
+         {u"Vitesse à laquelle la caméra tourne vers le haut et le bas avec le stick.",
+          u"Wie schnell sich die Kamera mit dem Stick nach oben und unten dreht.",
+          u"Velocità con cui la telecamera gira in alto e in basso con la levetta.",
+          u"Velocidad con que la cámara gira arriba y abajo con el stick."}},
+        {kPadAimHorizontal, "How fast the camera turns left and right while aiming.",
+         {u"Vitesse à laquelle la caméra tourne à gauche et à droite en visant.",
+          u"Wie schnell sich die Kamera beim Zielen nach links und rechts dreht.",
+          u"Velocità con cui la telecamera gira a sinistra e a destra mentre miri.",
+          u"Velocidad con que la cámara gira a izquierda y derecha al apuntar."}},
+        {kPadAimVertical, "How fast the camera turns up and down while aiming.",
+         {u"Vitesse à laquelle la caméra tourne vers le haut et le bas en visant.",
+          u"Wie schnell sich die Kamera beim Zielen nach oben und unten dreht.",
+          u"Velocità con cui la telecamera gira in alto e in basso mentre miri.",
+          u"Velocidad con que la cámara gira arriba y abajo al apuntar."}},
+        {kInvertPadX, "Swaps left and right for the camera stick.",
+         {u"Inverse la gauche et la droite du stick de caméra.",
+          u"Vertauscht links und rechts beim Kamera-Stick.",
+          u"Scambia sinistra e destra per la levetta della telecamera.",
+          u"Intercambia izquierda y derecha en el stick de la cámara."}},
+        {kInvertPadY, "Swaps up and down for the camera stick.",
+         {u"Inverse le haut et le bas du stick de caméra.",
+          u"Vertauscht oben und unten beim Kamera-Stick.",
+          u"Scambia alto e basso per la levetta della telecamera.",
+          u"Intercambia arriba y abajo en el stick de la cámara."}},
+        {kPadDeadZone, "How far a stick must move before it counts. Raise it if the camera drifts by itself.",
+         {u"Course minimale d'un stick avant qu'il soit pris en compte. Augmentez-la si la caméra dérive toute seule.",
+          u"Wie weit ein Stick bewegt werden muss, bevor er zählt. Erhöhen, wenn die Kamera von selbst wandert.",
+          u"Quanto deve muoversi una levetta prima di contare. Aumentala se la telecamera si sposta da sola.",
+          u"Cuánto debe moverse un stick antes de contar. Auméntala si la cámara se desplaza sola."}},
+        {kVibration, "Strength of the controller's rumble. 0% turns it off.",
+         {u"Intensité des vibrations de la manette. 0% les désactive.",
+          u"Stärke der Controller-Vibration. 0% schaltet sie aus.",
+          u"Intensità della vibrazione del controller. 0% la disattiva.",
+          u"Intensidad de la vibración del mando. 0% la desactiva."}},
+        {kTouchControls, "Buttons on the touch screen. Automatic decides by itself whether they are shown.",
+         {u"Boutons sur l'écran tactile. Automatique décide seul de les afficher ou non.",
+          u"Tasten auf dem Touchscreen. Automatisch entscheidet selbst, ob sie angezeigt werden.",
+          u"Pulsanti sullo schermo tattile. Automatico decide da solo se mostrarli.",
+          u"Botones en la pantalla táctil. Automático decide por sí solo si se muestran."}},
+        {kTouchOpacity, "How visible the buttons on the touch screen are.",
+         {u"Visibilité des boutons sur l'écran tactile.",
+          u"Wie deutlich die Tasten auf dem Touchscreen sichtbar sind.",
+          u"Quanto sono visibili i pulsanti sullo schermo tattile.",
+          u"Visibilidad de los botones en la pantalla táctil."}},
+        {kGyroAiming, "Aim by moving the controller or the device.",
+         {u"Visez en bougeant la manette ou l'appareil.",
+          u"Zielen durch Bewegen des Controllers oder des Geräts.",
+          u"Mira muovendo il controller o il dispositivo.",
+          u"Apunta moviendo el mando o el dispositivo."}},
+        {kGyroSource, "Whose motion sensor is used: the controller's or this device's.",
+         {u"Capteur de mouvement utilisé: celui de la manette ou celui de cet appareil.",
+          u"Wessen Bewegungssensor genutzt wird: der des Controllers oder der dieses Geräts.",
+          u"Sensore di movimento usato: quello del controller o quello di questo dispositivo.",
+          u"Sensor de movimiento usado: el del mando o el de este dispositivo."}},
+        {kGyroSensitivity, "How strongly movement turns the camera.",
+         {u"Force avec laquelle le mouvement fait tourner la caméra.",
+          u"Wie stark Bewegung die Kamera dreht.",
+          u"Quanto il movimento fa girare la telecamera.",
+          u"Cuánto gira la cámara con el movimiento."}},
+        {kGyroAxis, "Which movement turns the camera left and right.",
+         {u"Mouvement qui fait tourner la caméra à gauche et à droite.",
+          u"Welche Bewegung die Kamera nach links und rechts dreht.",
+          u"Movimento che fa girare la telecamera a sinistra e a destra.",
+          u"Movimiento que gira la cámara a izquierda y derecha."}},
+        {kGyroInvertX, "Swaps left and right for gyro aiming.",
+         {u"Inverse la gauche et la droite pour la visée gyroscopique.",
+          u"Vertauscht links und rechts beim Gyro-Zielen.",
+          u"Scambia sinistra e destra per la mira con giroscopio.",
+          u"Intercambia izquierda y derecha al apuntar con giroscopio."}},
+        {kGyroInvertY, "Swaps up and down for gyro aiming.",
+         {u"Inverse le haut et le bas pour la visée gyroscopique.",
+          u"Vertauscht oben und unten beim Gyro-Zielen.",
+          u"Scambia alto e basso per la mira con giroscopio.",
+          u"Intercambia arriba y abajo al apuntar con giroscopio."}},
+        {kGyroButton, "A controller button that switches gyro aiming on or off. The row below sets how.",
+         {u"Bouton de la manette qui active ou désactive la visée gyroscopique. La ligne suivante définit comment.",
+          u"Eine Controller-Taste, die das Gyro-Zielen ein- oder ausschaltet. Die Zeile darunter legt fest, wie.",
+          u"Pulsante del controller che attiva o disattiva la mira con giroscopio. La riga sotto stabilisce come.",
+          u"Botón del mando que activa o desactiva el apuntado con giroscopio. La fila siguiente define cómo."}},
+        {kGyroButtonMode, "What the gyro button does: gyro off while held, on while held, or switched with each press.",
+         {u"Effet du bouton gyro: gyro désactivé tant qu'il est maintenu, activé tant qu'il est maintenu, ou basculé à chaque appui.",
+          u"Was die Gyro-Taste tut: Gyro aus solange gehalten, an solange gehalten, oder Umschalten bei jedem Druck.",
+          u"Cosa fa il pulsante giroscopio: giroscopio spento finché è premuto, acceso finché è premuto, o commutato a ogni pressione.",
+          u"Qué hace el botón de giroscopio: giroscopio apagado mientras se mantiene, encendido mientras se mantiene, o alternado con cada pulsación."}},
+        {kGyroRecenter, "A controller button that centres the view again.",
+         {u"Bouton de la manette qui recentre la vue.",
+          u"Eine Controller-Taste, die die Ansicht wieder zentriert.",
+          u"Pulsante del controller che ricentra la visuale.",
+          u"Botón del mando que vuelve a centrar la vista."}},
+        {kGyroCalibrate, "Measures the sensor's drift. Lay the controller or device still on a table, then start.",
+         {u"Mesure la dérive du capteur. Posez la manette ou l'appareil immobile sur une table, puis lancez.",
+          u"Misst die Abweichung des Sensors. Controller oder Gerät ruhig auf einen Tisch legen, dann starten.",
+          u"Misura la deriva del sensore. Appoggia il controller o il dispositivo fermo su un tavolo, poi avvia.",
+          u"Mide la deriva del sensor. Deja el mando o el dispositivo quieto sobre una mesa y luego inicia."}},
+    };
+    if (row.kind != Kind::Value) return {};
+    auto at = std::find(std::begin(kLanguages), std::end(kLanguages), BootLanguage());
+    int language = at == std::end(kLanguages) ? -1 : int(at - std::begin(kLanguages)) - 1;
+    for (const Entry& e : kHelp)
+        if (e.id == row.id)
+            return language < 0 ? std::u16string(e.english.begin(), e.english.end()) : std::u16string(e.text[language]);
+    return {};
 }
 
 }  // namespace rows

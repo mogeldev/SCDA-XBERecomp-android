@@ -904,6 +904,14 @@ private:
     bool profile_ = false;
     bool profile_passes_ = true;
     bool narrow_barriers_ = false;
+    // GPU SYNC menu row (app::Settings::gpu_sync): 0 automatic, 1 relaxed (narrow), 2 strict (global)
+    uint32_t gpu_sync_ = 0;
+    // Mali-G51: 20.7 to 24.5 fps with the narrow pass-end barrier, Adreno 710 no difference. The debug property
+    // overrides the menu for A/B runs.
+    void ResolveBarriers() {
+        bool narrow = gpu_sync_ == 1 || (gpu_sync_ == 0 && props_.vendorID == kArmVendor);
+        narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers", narrow);
+    }
     // swapchain at the render scale; the display hardware stretches it
     bool present_scaled_ = false;
     // OPTIMISATION menu rows (scaled_presentation, native_effect_size, fast_glow in scda.toml). E1: targets of at most
@@ -982,6 +990,7 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
         present_scaled_ = app::Get().scaled_presentation;
         effect_native_ = app::Get().native_effect_size;
         effect_single_tap_ = app::Get().fast_glow;
+        gpu_sync_ = app::Get().gpu_sync;
     }
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
@@ -1072,8 +1081,8 @@ bool VulkanBackend::CreateDevice() {
     }
     screen_linear_workaround_ = NeedsScreenLinearWorkaround(props_.vendorID, props_.deviceName, props_.driverVersion);
     if (screen_linear_workaround_) LOGI("vulkan: experimental Mali-G51 r18p0 screen-linear interpolation workaround");
-    // Mali-G51: 20.7 to 24.5 fps with the narrow pass-end barrier, Adreno 710 no difference
-    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers", props_.vendorID == kArmVendor);
+    ResolveBarriers();
+    LOGI("vulkan: pass-end barriers %s", narrow_barriers_ ? "narrow" : "global");
     vkGetPhysicalDeviceMemoryProperties(gpu_, &mem_props_);
     ubo_align_ = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
 
@@ -3372,7 +3381,7 @@ void VulkanBackend::LogStats() {
     frame_shader_ms_ = frame_pipeline_ms_ = 0;
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
-    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers", props_.vendorID == kArmVendor);
+    ResolveBarriers();
     // Trace one frame per report while requested; exclude trace windows from benchmarks.
     trace_passes_ = DebugFlag("debug.scda.vk_trace");
 }
@@ -3381,7 +3390,7 @@ void VulkanBackend::LogStats() {
 // GPU (or a late readback) may still be using them. Shader and pipeline caches do not depend on target dimensions.
 void VulkanBackend::ApplySettings() {
     float scale;
-    uint32_t shadows;
+    uint32_t shadows, sync;
     bool scaled, native;
     {
         std::lock_guard lock(app::UiLock());
@@ -3390,6 +3399,12 @@ void VulkanBackend::ApplySettings() {
         scaled = app::Get().scaled_presentation;
         native = app::Get().native_effect_size;
         effect_single_tap_ = app::Get().fast_glow;  // read per draw, no target change
+        sync = app::Get().gpu_sync;
+    }
+    if (sync != gpu_sync_) {
+        gpu_sync_ = sync;  // no pass is open between frames: the next pass end uses the new barrier
+        ResolveBarriers();
+        LOGI("vulkan: pass-end barriers %s", narrow_barriers_ ? "narrow" : "global");
     }
     if (scaled != present_scaled_) {
         present_scaled_ = scaled;

@@ -20,6 +20,8 @@ using namespace kernel;
 namespace game {
 bool OnStack(uint32_t page);  // options_menu.cpp
 uint32_t StackOwner(uint32_t page);  // options_menu.cpp
+bool OptionsHelp(uint32_t page);  // options_menu.cpp
+std::u16string HelpCaption();  // options_menu.cpp
 uint32_t DrawingPage();  // hud.cpp
 uint32_t KeyboardPlayer();  // mouse.cpp
 std::u16string KeyWording(std::u16string text);  // text.cpp
@@ -344,6 +346,65 @@ uint32_t WithoutY(uint32_t fstring) {
     W32(g_block + kFStringCount, uint32_t(n + 1));
     W32(g_block + kFStringCapacity, uint32_t(n + 1));
     return g_block;
+}
+
+// RECOMP SETTINGS explains its rows on Y (options_menu.cpp): the actions with Y's pair after them, in the block's
+// FString. The pair's text key is the last pair's, a key the game has; CaptionY then gives the slot its own text.
+uint32_t WithY(uint32_t fstring) {
+    uint32_t data = R32(fstring);
+    uint32_t chars = std::min<uint32_t>(R32(fstring + kFStringCount), kMaxActionChars);
+    std::u16string actions;
+    for (uint32_t i = 0; data && i + 1 < chars; i++) actions += char16_t(R16(data + i * 2));
+    size_t last = actions.rfind(u',');
+    if (actions.empty() || last == std::u16string::npos) return fstring;
+    for (size_t at = 0; at < actions.size();) {
+        size_t comma = std::min(actions.find(u',', at), actions.size());
+        size_t end = std::min(actions.find(u',', comma + 1), actions.size());
+        if (actions.compare(at, comma - at, u"Y") == 0) return fstring;
+        at = end + 1;
+    }
+    std::u16string out = actions + u",Y," + actions.substr(last + 1);
+    size_t n = std::min<size_t>(out.size(), kMaxLineChars);
+    for (size_t i = 0; i < n; i++) W16(g_block + kBlockText + uint32_t(i) * 2, uint16_t(out[i]));
+    W16(g_block + kBlockText + uint32_t(n) * 2, 0);
+    W32(g_block, g_block + kBlockText);
+    W32(g_block + kFStringCount, uint32_t(n + 1));
+    W32(g_block + kFStringCapacity, uint32_t(n + 1));
+    return g_block;
+}
+
+// false past the last slot
+bool CaptionSlotY(X86Context& ctx, uint32_t box, uint32_t text_name, uint32_t image_name, const std::u16string& caption) {
+    uint32_t ti = CallGuest(ctx, kFind, {box, text_name});
+    uint32_t ii = CallGuest(ctx, kFind, {box, image_name});
+    if (!ii) return false;
+    uint32_t text = ti ? R32(ti + kInstanceWidget) : 0;
+    uint32_t image = R32(ii + kInstanceWidget);
+    uint32_t material = image ? R32(image + kImageMaterial) : 0;
+    if (text && material && R32(material + kMaterialId) == game::magma::Id("Button_Y")) WriteText(ctx, text, caption);
+    return true;
+}
+
+void CaptionY(X86Context& ctx, uint32_t page, uint32_t type, const std::u16string& caption) {
+    if (type > 2 || !Block()) return;
+    uint32_t instance = CallGuest(ctx, kFind, {page, kPanels[type]});
+    uint32_t panel = instance ? R32(instance + kInstanceWidget) : 0;
+    uint32_t box = panel ? R32(panel + kChildren) : 0;
+    if (!box) return;
+    if (type == 2) {
+        for (uint32_t name : kBarButtons) {
+            uint32_t button = CallGuest(ctx, kFind, {box, name});
+            uint32_t element = button ? R32(button + kInstanceWidget) : 0;
+            uint32_t inner = element ? R32(element + kChildren) : 0;
+            if (inner) CaptionSlotY(ctx, inner, kBarText, kBarImage, caption);
+        }
+        return;
+    }
+    for (int i = 0; i < 16; i++) {
+        uint32_t text = Ansi(g_block + kBlockTextName, std::to_string(i) + "_Text");
+        uint32_t image = Ansi(g_block + kBlockImageName, std::to_string(i) + "_Image");
+        if (!CaptionSlotY(ctx, box, text, image, caption)) break;
+    }
 }
 
 uint32_t Child(X86Context& ctx, uint32_t parent, uint32_t id) {
@@ -706,6 +767,25 @@ void PromptsTick(X86Context& ctx) {
     }
 }
 
+// a page's legends set again as the game last set them (options_menu.cpp: Y's pair comes and goes with its rows)
+void Legends(X86Context& ctx, uint32_t page) {
+    if (!page || !Block()) return;
+    bool found = false;
+    for (const Bar& bar : g_bars) {
+        if (bar.page != page) continue;
+        found = true;
+        size_t n = std::min<size_t>(bar.actions.size(), kMaxLineChars);
+        for (size_t i = 0; i < n; i++) W16(g_block + kBlockText + uint32_t(i) * 2, uint16_t(bar.actions[i]));
+        W16(g_block + kBlockText + uint32_t(n) * 2, 0);
+        W32(g_block, g_block + kBlockText);
+        W32(g_block + kFStringCount, uint32_t(n + 1));
+        W32(g_block + kFStringCapacity, uint32_t(n + 1));
+        ctx.ecx = bar.owner;
+        CallGuest(ctx, kSetNavigation, {bar.page, g_block, bar.type});
+    }
+    LOGI("legends: page %08X %s", page, found ? "set again" : "has none remembered");
+}
+
 }  // namespace game
 
 // SetNavigation: remembered for a device change, and relabelled for the keyboard
@@ -718,7 +798,15 @@ X86_FUNC(sub_002915C1) {
     if (page && actions && actions != g_block) Remember(owner, page, actions, type);
     if (page && actions && R32(page + kPageId) == kNameEntry && Keyboard(page) && Block())
         W32(ctx.esp + 8, WithoutY(actions));
+    // the pad's legend only: the keyboard has no key for it
+    bool help = page && actions && game::OptionsHelp(page) && !Keyboard(page) && Block();
+    if (help) W32(ctx.esp + 8, WithY(actions));
     __imp__sub_002915C1(ctx, base);
+    if (help) {
+        uint32_t result = ctx.eax;
+        CaptionY(ctx, page, type, game::HelpCaption());
+        ctx.eax = result;
+    }
     if (!page || (!Keyboard(page) && g_moved.empty())) return;
     uint32_t eax = ctx.eax;
     Relabel(ctx, page, type, Keyboard(page));

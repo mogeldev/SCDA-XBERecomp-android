@@ -21,6 +21,10 @@ namespace dispatch {
 uint32_t HostThunk(X86Func* fn);
 }  // namespace dispatch
 
+namespace game {
+void Legends(X86Context& ctx, uint32_t page);  // prompts.cpp
+}
+
 namespace {
 
 // COptionsMenu: +8 the listener its OnPress, OnBack and OnKey get, +0x14 owner, +0x28 P_Options, +0x2C its list,
@@ -142,6 +146,7 @@ struct Take {
     int section = -1;                         // RECOMP SETTINGS: the heading shown
     bool refill = false;                      // a pick can change which rows show
     int last_row = 0;                         // the selection last tick, which way it moved onto a gap
+    bool help = false;                        // a row listed has a HELP text: Y's legend shows
 };
 Take g_take;  // game thread
 
@@ -343,6 +348,73 @@ void Popup(X86Context& ctx, int row, const std::vector<std::string>& choices, in
     LOGI("options menu: popup of %u for row %d", n, row);
 }
 
+// HELP (Y): the game's OK / Cancel box (as exit_menu.cpp opens it) with what the selected row does. Its listener has
+// the profile menu's vtable, which acts on its own ids only; OnAccept (+0) and OnCancel (+4) are ours first, to know
+// the box went. The page under the box gets the box's A and B too, so it takes none while it is up or just went.
+constexpr uint32_t kMessageBox = 0x29388A;  // thiscall owner
+constexpr uint32_t kBoxListenerVtable = 0x546EC8;
+constexpr uint32_t kBoxListenerSlots = 8;
+constexpr uint32_t kHelpId = 0x7D;
+constexpr int kPadY = 3;  // input::PressedPadButton
+constexpr int kHelpUp = 1000;
+constexpr int kHelpCooldown = 3;  // ticks
+// block: +0 listener, +0x10 its vtable, +0x40 the title, text and empty FStrings, +0x80 title, +0x180 text
+constexpr uint32_t kHelpSize = 0x1000;
+constexpr uint32_t kHelpVtable = 0x10;
+constexpr uint32_t kHelpTitle = 0x40;
+constexpr uint32_t kHelpText = 0x4C;
+constexpr uint32_t kHelpEmpty = 0x58;
+constexpr uint32_t kHelpTitleChars = 0x80;
+constexpr uint32_t kHelpTextChars = 0x180;
+uint32_t g_help = 0;
+int g_help_state = 0;  // kHelpUp while the box is up, then the ticks left
+bool g_y = false;
+
+void HelpGone(X86Context& ctx, uint32_t slot) {
+    LOGI("options menu: help closed");
+    g_help_state = kHelpCooldown;
+    // thiscall listener (id), ret 4: on to the vtable's own
+    CallGuest(ctx, R32(kBoxListenerVtable + slot), {R32(ctx.esp + 4)});
+    ctx.esp += 8;
+}
+void HelpAccepted(X86Context& __restrict ctx, uint8_t*) { HelpGone(ctx, 0); }
+void HelpCancelled(X86Context& __restrict ctx, uint8_t*) { HelpGone(ctx, 4); }
+
+void HelpString(uint32_t fstring, uint32_t at, const std::u16string& text, size_t max) {
+    size_t n = std::min(text.size(), max);
+    for (size_t i = 0; i < n; i++) W16(at + uint32_t(i) * 2, uint16_t(text[i]));
+    W16(at + uint32_t(n) * 2, 0);
+    W32(fstring, at);
+    W32(fstring + kFStringCount, uint32_t(n + 1));
+    W32(fstring + kFStringCapacity, uint32_t(n + 1));
+}
+
+void Help(X86Context& ctx) {
+    int row = int16_t(R16(g_take.list + kSelection));
+    const app::rows::Row* r = row >= 0 && row < int(g_take.rows.size()) ? g_take.rows[size_t(row)] : nullptr;
+    std::u16string text = r ? app::rows::Help(*r) : std::u16string();
+    if (text.empty()) return;
+    if (!g_help) {
+        g_help = mem::AllocSystem(kHelpSize);
+        if (!g_help) return;
+        uint32_t vtable = g_help + kHelpVtable;
+        for (uint32_t i = 0; i < kBoxListenerSlots; i++) W32(vtable + i * 4, R32(kBoxListenerVtable + i * 4));
+        W32(vtable, dispatch::HostThunk(HelpAccepted));
+        W32(vtable + 4, dispatch::HostThunk(HelpCancelled));
+        W32(g_help, vtable);
+        for (uint32_t i = 0; i < kFStringSize; i += 4) W32(g_help + kHelpEmpty + i, 0);
+    }
+    HelpString(g_help + kHelpTitle, g_help + kHelpTitleChars, Text(r->label), (kHelpTextChars - kHelpTitleChars) / 2 - 1);
+    HelpString(g_help + kHelpText, g_help + kHelpTextChars, text, (kHelpSize - kHelpTextChars) / 2 - 1);
+    g_help_state = kHelpUp;
+    Sound(ctx, g_take.owner);
+    uint32_t empty = g_help + kHelpEmpty;
+    ctx.ecx = g_take.owner;
+    CallGuest(ctx, kMessageBox,
+              {kHelpId, g_help + kHelpTitle, g_help + kHelpText, 4, 1, g_help, empty, empty, 0, 0, 0, empty});
+    LOGI("options menu: help for row %d", row);
+}
+
 void Fill(X86Context& ctx, int select = 0) {
     using app::rows::Kind;
     size_t count = 0;
@@ -355,6 +427,9 @@ void Fill(X86Context& ctx, int select = 0) {
         g_take.rows.push_back(&kGap);
         g_take.rows.push_back(nullptr);
     }
+    g_take.help = std::any_of(g_take.rows.begin(), g_take.rows.end(), [](const app::rows::Row* r) {
+        return r && !app::rows::Help(*r).empty();
+    });
     uint32_t list = g_take.list;
     ctx.ecx = list;
     CallGuest(ctx, kClear, {});
@@ -435,6 +510,7 @@ void Enter(X86Context& ctx, uint32_t menu, int mode, int section = -1) {
     CallGuest(ctx, kResetFocus, {page});
     ctx.ecx = owner;
     CallGuest(ctx, kShow, {page, 1, 1, 0});
+    game::Legends(ctx, page);
     Sound(ctx, owner);
     LOGI("options menu: %s, %zu rows, %u shown", kCaptions[mode], g_take.rows.size(), g_shown);
 }
@@ -453,7 +529,10 @@ void Leave(X86Context& ctx) {
     ctx.ecx = g_take.list;
     CallGuest(ctx, kLayout, {});
     RestoreStock(ctx, g_take.menu);
+    uint32_t page = g_take.page;
     g_take = {};
+    g_help_state = 0;
+    game::Legends(ctx, page);  // without Y's
 }
 
 // step 0 is A
@@ -670,6 +749,12 @@ uint32_t StackOwner(uint32_t page) {
 
 bool OnStack(uint32_t page) { return StackOwner(page) != 0; }
 
+// prompts.cpp: the page's legends get Y's, with this caption
+bool OptionsHelp(uint32_t page) {
+    return g_take.mode >= 0 && !g_take.leaving && g_take.help && page == g_take.page;
+}
+std::u16string HelpCaption() { return Text("HELP"); }
+
 // mouse.cpp: the cursor leaves the selection alone over our blank row, else the pass over it flickers
 bool BlankRow(uint32_t list, int row) {
     return g_take.mode >= 0 && list == g_take.list && row >= 0 && row < int(g_take.rows.size()) &&
@@ -733,6 +818,7 @@ static void CaptureTick(X86Context& ctx) {
 // game thread, every input update
 void MenuTick(X86Context& ctx) {
     SectionsTick(ctx);
+    if (g_help_state > 0 && g_help_state < kHelpUp) g_help_state--;
     if (g_take.mode < 0) return;
     // the stock rows go back only once the list's key handling is over, a refill under it leaves the page stale
     if (g_take.leaving) {
@@ -767,6 +853,7 @@ void MenuTick(X86Context& ctx) {
         StopCapture();
         W16(g_take.list + kListY, uint16_t(kStockListY));
         g_take = {};
+        g_help_state = 0;
         g_restore = true;
         return;
     }
@@ -774,8 +861,12 @@ void MenuTick(X86Context& ctx) {
     PassGap(ctx);
     // read every tick, so a Delete that answers a capture is not a fresh press once it ends
     bool clear = input::TakeDeletePress();
+    bool y = input::PressedPadButton() == kPadY;
+    bool help = y && !g_y;
+    g_y = y;
     if (g_capture >= 0) return CaptureTick(ctx);
     if (clear) Clear(ctx);
+    if (help && g_take.help && !g_help_state && g_popup_row < 0 && OurPage(ctx, g_take.menu)) Help(ctx);
 }
 
 }  // namespace game
@@ -815,6 +906,11 @@ static void OpenSections(X86Context& ctx, uint32_t menu, uint32_t list, uint32_t
 X86_EXTERN_FUNC(__imp__sub_001A4161);
 X86_FUNC(sub_001A4161) {
     uint32_t menu = ctx.ecx - kListener;
+    if (g_help_state && g_take.mode >= 0 && menu == g_take.menu) {
+        ctx.eax = 0;
+        ctx.esp += 8;
+        return;
+    }
     uint32_t instance = R32(ctx.esp + 4);
     uint32_t owner = R32(menu + kOwner);
     uint32_t list = R32(menu + kOptionsList);
@@ -853,6 +949,11 @@ X86_FUNC(sub_001A4161) {
 X86_EXTERN_FUNC(__imp__sub_001A5C41);
 X86_FUNC(sub_001A5C41) {
     uint32_t menu = ctx.ecx - kListener;
+    if (g_help_state && g_take.mode >= 0 && menu == g_take.menu) {
+        ctx.eax = 0;
+        ctx.esp += 8;
+        return;
+    }
     if (OurPage(ctx, menu)) {
         LOGI("options menu: back");
         uint32_t owner = g_take.owner;
@@ -883,6 +984,11 @@ X86_FUNC(sub_001A5786) {
     uint32_t menu = ctx.ecx - kListener;
     uint32_t key_at = R32(ctx.esp + 8);
     uint32_t key = key_at ? R32(key_at) : 0;
+    if (g_help_state && g_take.mode >= 0 && menu == g_take.menu) {
+        ctx.eax = 0;
+        ctx.esp += 12;
+        return;
+    }
     if ((key == kLeft || key == kRight) && OurPage(ctx, menu)) {
         if (g_capture < 0) Act(ctx, key == kLeft ? -1 : 1);
         G<uint8_t>(g_take.owner + kTaken) = 1;
