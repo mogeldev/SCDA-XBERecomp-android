@@ -58,6 +58,7 @@ constexpr VkDeviceSize kRingReserve = 8ull << 20;
 constexpr uint32_t kSetsPerPool = 2048;
 constexpr VkFormat kBgra = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr uint32_t kNone = UINT32_MAX;
+constexpr uint32_t kArmVendor = 0x13B5;  // Mali
 constexpr uint32_t kTimedPasses = 128;
 constexpr uint32_t kTimestampQueries = 2 + kTimedPasses * 2;
 
@@ -975,7 +976,6 @@ bool VulkanBackend::Init(uint32_t width, uint32_t height) {
     window_ = static_cast<SDL_Window*>(app::Window());
     profile_ = DebugFlag("debug.scda.vk_profile");
     profile_passes_ = DebugFlag("debug.scda.vk_profile_passes", true);
-    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
     {
         // OPTIMISATION menu rows; ApplySettings follows later changes
         std::lock_guard lock(app::UiLock());
@@ -1072,6 +1072,8 @@ bool VulkanBackend::CreateDevice() {
     }
     screen_linear_workaround_ = NeedsScreenLinearWorkaround(props_.vendorID, props_.deviceName, props_.driverVersion);
     if (screen_linear_workaround_) LOGI("vulkan: experimental Mali-G51 r18p0 screen-linear interpolation workaround");
+    // Mali-G51: 20.7 to 24.5 fps with the narrow pass-end barrier, Adreno 710 no difference
+    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers", props_.vendorID == kArmVendor);
     vkGetPhysicalDeviceMemoryProperties(gpu_, &mem_props_);
     ubo_align_ = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
 
@@ -3370,7 +3372,7 @@ void VulkanBackend::LogStats() {
     frame_shader_ms_ = frame_pipeline_ms_ = 0;
     descriptor_cache_ = DebugFlag("debug.scda.vk_descriptor_cache", true);
     skip_unused_stages_ = DebugFlag("debug.scda.vk_skip_unused_stages", true);
-    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers");
+    narrow_barriers_ = DebugFlag("debug.scda.vk_narrow_barriers", props_.vendorID == kArmVendor);
     // Trace one frame per report while requested; exclude trace windows from benchmarks.
     trace_passes_ = DebugFlag("debug.scda.vk_trace");
 }
