@@ -1,6 +1,13 @@
 # SCDA Android port: notes
 
-Current release: 0.3.0-testing.2 (launcher ZIP log export). 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.4.0-testing.1 (faster Mali default, GPU SYNC option, Y row help). 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+
+## 0.4.0-testing.1: Mali performance, GPU SYNC, row help
+
+- ARM/Mali GPUs now use the narrow pass-end barrier by default (about 20.7 to 24.5 FPS on a Mali-G51 in one Iceland view); other GPUs are unchanged. Details and limits: "Mali-G51 average-FPS pass" below.
+- Recomp Settings > PERFORMANCE > GPU SYNC (`AUTOMATIC`/`RELAXED (FASTER)`/`STRICT`) lets players override that live.
+- Y on a settings row opens a short explanation in the game's language (see "Row help" below).
+- Native runtime changed; compiler/import toolchains and Turnip are unchanged from 0.3.0-testing.2. Installed games need no recompilation.
 
 ## 0.3.0-testing.2: error log export
 
