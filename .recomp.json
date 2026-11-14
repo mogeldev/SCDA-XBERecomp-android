@@ -9,8 +9,8 @@
   "status": "in-progress",
   "targets": ["Android"],
   "toolchain": "xbe_recomp",
-  "approach": "Android ARM64 port of the TGP482 static recompilation; Vulkan renderer, on-device compilation from your own ISO",
+  "approach": "Android (ARM64 and x86_64) port of the TGP482 static recompilation; Vulkan renderer, on-device compilation from your own ISO",
   "maintainers": [{ "name": "mogeldev", "link": "https://github.com/mogeldev" }],
   "links": [{ "label": "Upstream (Windows)", "url": "https://github.com/TGP482/SCDA-XBERecomp" }],
-  "notes": "Testing pre-releases only. Tested on Adreno 710 (Android 16) and experimentally on Mali-G51 (Android 10, driver-specific workaround). Other Mali drivers and 16-KiB page-size devices untested. Controller recommended; touch controls available. Campaign only. No game files included."
+  "notes": "Release candidate 1.0.0-rc.1 (prerelease). Tested on Adreno 710 (Android 16) and experimentally on Mali-G51 (Android 10, driver-specific workaround); an x86_64 emulator boots to the menu. Other Mali drivers and 16-KiB page-size devices untested. Controller recommended; touch controls available. Campaign only. No game files included."
 }
