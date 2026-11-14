@@ -1,6 +1,6 @@
 # SCDA Android port: notes
 
-Current release: 0.4.0-testing.2 (menu music fix). 0.4.0-testing.1 added the faster Mali default, GPU SYNC option and Y row help. 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 1.0.0-rc.1 (release candidate, same code as 0.4.0-testing.2). 0.4.0-testing.2 fixed the menu music. 0.4.0-testing.1 added the faster Mali default, GPU SYNC option and Y row help. 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
 
 ## 0.4.0-testing.2: menu music fix
 

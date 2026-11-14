@@ -105,7 +105,11 @@ Android `0.4.0-testing.1` / code 15, same debug certificate; prerelease, not Lat
 
 Correction (2026-11-10): the corresponding-source zip and its SHA256SUMS file on this release were replaced. The first zip's README named 0.3.0-testing.2 and cited project-source at 91451ca, and its `TOOLCHAIN-NOTICES.md` was out of date. The APK is unchanged. This replacement is a documented exception to the rule against silently replacing published assets. The GitHub release notes do not mention it, so it is recorded here: first source zip SHA-256 `cf80dd964e11802c0e99b5c92a63f9a780377506a8580d160792690e58ec75d1`, replacement `11586149bffd569f92b99480963acc321042cdc783799c9e4cde42bcdf61ef51`.
 
-## Published testing version: 0.4.0-testing.2
+## Published release candidate: 1.0.0-rc.1
+
+Android `1.0.0-rc.1` / code 17, same debug certificate; prerelease, not Latest. Same code as `0.4.0-testing.2` (menu music fix); only the version name and code changed, so the 1.0.0 line starts from the tested 0.4.0 code. Dual-ABI APK (arm64-v8a, x86_64), no embedded game code, host tests passed. The manual RC checklist above (fresh import, archive formats, upgrade preservation, controller/save/resume/mission checks) has **not** been completed on this exact APK; promotion to 1.0.0 needs those gates and explicit approval. Known open risks: untested 16-KiB page devices, Mali beyond the Mali-G51 tablet, x86_64 hardware, and campaign areas not played. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
+
+## Previous testing version: 0.4.0-testing.2
 
 Android `0.4.0-testing.2` / code 16, same debug certificate; prerelease, not Latest. Fixes the main menu music running fast with clicks (issue #4): a looping DirectSound buffer could report its own size as the play position, and the game's software mixer then overwrote music not yet played. The user confirmed by ear on the Poco X6 / Adreno 710 (120 Hz) that the music was wrong before and normal after, using a single-ABI test build of the same fix; the exact version-bumped dual-ABI APK, Mali and x86_64 were not device-tested for this version. The audio start line in the log now names the SDL driver and device format. Compiler/import toolchains and Turnip unchanged; installed games need no recompilation. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
 
