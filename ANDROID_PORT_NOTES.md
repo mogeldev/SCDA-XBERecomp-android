@@ -1,6 +1,13 @@
 # SCDA Android port: notes
 
-Current release: 0.4.0-testing.1 (faster Mali default, GPU SYNC option, Y row help). 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+Current release: 0.4.0-testing.2 (menu music fix). 0.4.0-testing.1 added the faster Mali default, GPU SYNC option and Y row help. 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
+
+## 0.4.0-testing.2: menu music fix
+
+- The main menu music ran fast and clicked (issue #4, reported on 0.2 and 0.4). The game mixes it itself into a 48 ms looping DirectSound buffer and asks for the play position about every 10 ms. A mixer block ending exactly on the loop's end left the position there, so `IDirectSoundBuffer_GetCurrentPosition` returned the buffer size; the game then rewrote the whole ring, about 32 ms of it not yet played. With the 20 ms blocks of the test phone that happened about four times a second. The position now wraps (`src/xdk/dsound.cpp`).
+- The menu film `back_menu.bik` has no audio track, so movie timing was not involved.
+- The log's `audio:` start line now names the SDL driver and the device's rate, channels and block size.
+- Native runtime changed; compiler/import toolchains and Turnip are unchanged. Installed games need no recompilation.
 
 ## 0.4.0-testing.1: Mali performance, GPU SYNC, row help
 
