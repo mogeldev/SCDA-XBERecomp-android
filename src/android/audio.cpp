@@ -51,7 +51,11 @@ void StartOutput(std::function<void(float* out, uint32_t frames)> render) {
         return;
     }
     SDL_ResumeAudioStreamDevice(g_stream);
-    LOGI("audio: stereo output through SDL");
+    SDL_AudioSpec device{};
+    int block = 0;
+    SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(g_stream), &device, &block);
+    LOGR("audio: stereo output through SDL %s, device %d Hz, %d channels, %d frame blocks", SDL_GetCurrentAudioDriver(),
+         device.freq, device.channels, block);
 }
 
 bool IsSurround() { return false; }

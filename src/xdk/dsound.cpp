@@ -1026,6 +1026,10 @@ BUFFER(GetStatus, 2) {
 }
 BUFFER(GetCurrentPosition, 3) {
     uint32_t p = BytesOf(v, uint32_t(v.pos));
+    // The mixer wraps a looping buffer on its next read, so a block ending on the loop's end leaves the position
+    // there. The game's own mixer, told its ring's size as the position, rewrote the whole ring, unplayed part too.
+    uint32_t end = v.loop_len ? v.loop_start + v.loop_len : v.bytes;
+    if (v.looping && end && p >= end) p = (v.loop_len ? v.loop_start : 0) + (p - end);
     if (a[1]) W32(a[1], p);
     if (a[2]) W32(a[2], v.bytes ? (p + BytesOf(v, kAdpcmFrames * 4)) % v.bytes : 0);
     return 0;
