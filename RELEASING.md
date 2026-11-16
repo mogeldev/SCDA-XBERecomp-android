@@ -107,7 +107,7 @@ Correction (2026-11-10): the corresponding-source zip and its SHA256SUMS file on
 
 ## Published stable version: 1.0.0
 
-GitHub `v1.0.0` (Release, Latest) is the exact `1.0.0-rc.1` build promoted without rebuilding: the APK, source zip and checksum files are byte-identical to the RC assets, and the tag `v1.0.0` points at the RC source commit `8c2324b`. Embedded Android version stays `1.0.0-rc.1` / code 17, debug certificate SHA-256 `1be501578a55867ac0b1fc488d516d33c07d14cfab2b43a69b8ace81e9cb8233`. Approved by the maintainer on 2026-11-16. The manual RC checklist above was **not** run in full before promotion; this was the maintainer's decision, and the remaining risks (untested 16-KiB page devices, Mali beyond G51, x86_64 hardware, unplayed campaign areas) stay documented. The maintainer considers the project complete; no further work is planned. The source zip's README still names `1.0.0-rc.1` because its bytes were not changed.
+GitHub `v1.0.0` (Release, Latest) is the exact `1.0.0-rc.1` build promoted without rebuilding: the APK, source zip and checksum files are byte-identical to the RC assets, and the tag `v1.0.0` points at the RC source commit `8c2324b`. Embedded Android version stays `1.0.0-rc.1` / code 17, debug certificate SHA-256 `1be501578a55867ac0b1fc488d516d33c07d14cfab2b43a69b8ace81e9cb8233`. Approved by the maintainer on 2026-11-16. The maintainer considers the project complete; no further work is planned. The source zip's README still names `1.0.0-rc.1` because its bytes were not changed.
 
 ## Previous release candidate: 1.0.0-rc.1
 
