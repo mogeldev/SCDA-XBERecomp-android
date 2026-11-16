@@ -51,74 +51,25 @@ Complete the following on the actual signed release candidate; features are froz
 - [ ] Publish setup/update instructions, supported game hash, known limitations, device coverage, embedded APK version/code and signing fingerprint.
 - [ ] Mark stable Latest; retain earlier stable releases and identify the last known-good release when withdrawing a broken one.
 
-## First checkpoint: 0.1.0-testing.1
+## Release history
 
-Source-only prerelease. No APK or Windows-builder binary was attached. Its immutable tag remains unchanged.
+| Version | Code | Summary |
+|---|---|---|
+| 0.1.0-testing.1 | — | Source-only checkpoint |
+| 0.1.0-testing.2 | 4 | First APK, debug-only signing, ARM64 |
+| 0.1.0-testing.3 | 5 | First versioned Windows builder |
+| 0.1.0-testing.4 | 6 | On-screen touch controls |
+| 0.1.0-testing.5 | 7 | Experimental Android 10 / API 29 |
+| 0.1.0-testing.6 | 8 | ARM64 and x86_64 runtimes in the APK |
+| 0.1.0-testing.7 | 9 | Phone gyro aiming |
+| 0.2.0-testing.1 | 10 | Optional universal Turnip v4.5 |
+| 0.2.0-testing.2 | 11 | Share device report |
+| 0.2.0-testing.3 | 12 | On-device compilation on x86_64 |
+| 0.3.0-testing.1 | 13 | Anti-aliasing, 4x anisotropic default, update check, Windows builder retired |
+| 0.3.0-testing.2 | 14 | Error log ZIP export |
+| 0.4.0-testing.1 | 15 | Mali narrow barrier default, GPU SYNC option, row help |
+| 0.4.0-testing.2 | 16 | Menu music fix (issue #4). GitHub release removed; tag `v0.4.0-testing.2` stays |
+| 1.0.0-rc.1 | 17 | First release candidate |
+| 1.0.0 | 17 | Stable: the 1.0.0-rc.1 APK promoted unchanged, tag `v1.0.0` on the RC commit `8c2324b`, debug certificate `1be501578a55867ac0b1fc488d516d33c07d14cfab2b43a69b8ace81e9cb8233`. Approved by the maintainer 2026-11-16 |
 
-## Published testing version: 0.1.0-testing.2
-
-The debug-only signing policy was adopted after `v0.1.0-testing.1` was published. Its immutable tag stays unchanged. `v0.1.0-testing.2` publishes the production ARM64 APK built from the tested source commit, its SHA-256 checksum, and corresponding compiler/toolchain source and build materials. Android source version is `0.1.0-testing.2` / code 4. The same debug certificate is retained for compatible updates.
-
-The phone workflow—install, select an ISO, on-device compilation, automatic launch and gameplay—was user-confirmed on Redmi Note 13 Pro 5G / Adreno 710. The maintainer confirms the bundled compiler/toolchain corresponding-source and licensing obligations are complete. Production-package upgrade-data preservation, low-storage stress, background/resume checks, Mali coverage and 16-KiB page-device testing remain open; this is not an RC or stable release.
-
-## Published testing version: 0.1.0-testing.3
-
-Android `0.1.0-testing.3` / code 5, same debug certificate. First release with the versioned Windows builder (`SCDA-Android-0.1.0-testing.3-Windows-Builder.zip`), the launcher screen and the on-request GitHub update check. Assets: APK, builder, corresponding source (toolchain libraries unchanged from testing.2) and SHA-256 sums. Phone upgrade in place, launcher, update check and game start were confirmed on the Adreno 710 phone; the full builder smoke test passed. Same open items as testing.2.
-
-## Published testing version: 0.1.0-testing.4
-
-Android `0.1.0-testing.4` / code 6, same debug certificate. Adds on-screen touch controls (shown while no controller is connected; CONTROLLER page: TOUCH CONTROLS AUTOMATIC/ON/OFF and opacity) and the app icon. Assets: APK, builder, corresponding source (toolchain libraries unchanged from testing.3) and SHA-256 sums. Touch controls and the icon were confirmed on the Adreno 710 phone; the full builder smoke test passed. Same open items as testing.2.
-
-## Published testing version: 0.1.0-testing.5
-
-Android `0.1.0-testing.5` / code 7, same debug certificate. Adds experimental Android 10 / API 29 support, including compiler/import-tool targets and a linked game-code unwinder, and an automatic shader-compiler workaround limited to ARM Mali-G51 driver `0x04800000` (r18p0). Other GPUs/drivers retain the original rendering path. Full first-run tablet compilation, game launch, gameplay and good-looking visuals were user-confirmed on Huawei AGS3K / Mali-G51; the same experimental build was user-tested on Android 16 / Adreno 710 with no apparent regressions. Assets: APK, matching Windows builder, corresponding source/notices and SHA-256 sums. Extended stability, broader import formats, other Mali drivers and 16-KiB devices remain open; this is not an RC or stable release.
-
-## Published testing version: 0.1.0-testing.6
-
-Android `0.1.0-testing.6` / code 8, same debug certificate. The release APK includes ARM64 and x86_64 runtimes. The matching Windows builder compiles both ABIs into one private game ZIP; import selects the device's library and normalizes it to the existing installed layout, retaining legacy single-library ZIP support. On-device compilation remains ARM64-only. Android 10 and the driver-specific Mali-G51 workaround remain experimental. Assets: dual-ABI APK, matching builder, corresponding source and SHA-256 sums. testing.5 assets remain unchanged.
-
-## Published testing version: 0.1.0-testing.7
-
-Android `0.1.0-testing.7` / code 9, same debug certificate. Adds opt-in phone gyro aiming during weapon aim/sniping, PHONE as the Android default source, independent gyro X/Y inversion, calibration completion/timeout feedback and automatic menu refresh. Existing controller behavior and saved preferences are retained; old gyro inversion follows the previous stick settings until explicitly changed. Skip intro movies defaults to ON for new/reset settings. Phone gyro test-build behavior was user-confirmed on Adreno 710; broader sensor/device coverage remains open. Assets: dual-ABI APK, matching dual-ABI Windows builder, corresponding source and SHA-256 sums. Previous releases remain unchanged.
-
-## Published testing version: 0.2.0-testing.1
-
-Android `0.2.0-testing.1` / code 10, same debug certificate; prerelease, not Latest. Adds bundled universal Turnip v4.5 (opt-in), GPU-chip detection from the exact Mesa A6xx–A8xx table, launcher recovery selection, separated driver caches and unified Vulkan dispatch. Only Adreno 710 has physical validation. Adds the native landscape launcher redesign, split requirements view and complete packaged-license reader. The user confirmed fresh setup/import/compile/play on the phone using the preceding test APK; exact version-bumped APK validation is separately recorded in release notes.
-
-Corresponding source now also includes the full pinned Mesa, Vauzi recipe/patch, adrenotools, linkernsbypass and volk archives plus project source. See `tools/turnip/SOURCES.md`: upstream binary revision is checked, not independently reproduced byte-for-byte. Never reuse the old source-bundle script without these additions. Turnip and Android 10 remain experimental; previous tags/assets stay unchanged.
-
-## Published testing version: 0.2.0-testing.3
-
-Android `0.2.0-testing.3` / code 12, same debug certificate; prerelease, not Latest. Adds on-device compilation on x86_64: the APK bundles the pinned LLVM/Clang/LLD 21.1.8 compiler/import tools for both ABIs (about 219 MB instead of 137 MB). The user confirmed a full ISO import, compile and getting in-game on the Android 15 x86_64 emulator and on the ARM64 phone, using the pre-bump test build of the same source. The source bundle adds the pinned x86_64 package manifest; libiconv source (same upstream 1.19.1) covers both ABIs.
-
-## Published testing version: 0.3.0-testing.1
-
-Android `0.3.0-testing.1` / code 13, same debug certificate; prerelease, not Latest. Adds the Android ANTI-ALIASING option (SMAA default, FXAA, off), 4x anisotropic filtering by default, a quiet update check at each app start (notice only when a newer release exists) and a game mode menu limited to Solo, Credits and Exit. The user confirmed the menu change and the FXAA/SMAA test build (barely any performance impact) on the Adreno 710 phone; the exact version-bumped APK was not separately device-tested. Game code and toolchains unchanged. **The Windows builder is retired**: no builder asset is published from this version on; the 0.2.0-testing.3 builder stays attached to its release, marked retired. Assets: APK, corresponding source and SHA-256 sums.
-
-## Published testing version: 0.3.0-testing.2
-
-Android `0.3.0-testing.2` / code 14, same debug certificate; prerelease, not Latest. Adds launcher ZIP export of saved game logs, last setup error and Vulkan diagnostics through the document picker. No game files, saves or automatic upload; logs may contain paths. User-exported test-build ZIP passed integrity/content checks; exact version-bumped APK not separately device-tested. Native code and toolchains unchanged. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
-
-## Published testing version: 0.4.0-testing.1
-
-Android `0.4.0-testing.1` / code 15, same debug certificate; prerelease, not Latest. ARM/Mali GPUs default to the narrow pass-end barrier (about 18% more FPS on a Mali-G51 tablet in one stationary view; other vendors unchanged). Adds the PERFORMANCE row GPU SYNC (Automatic/Relaxed/Strict) to override it live, and a `Y Help` legend that opens a short explanation of the selected settings row in the game's language. The user confirmed the GPU SYNC row and the help box (German, every section) on the Huawei AGS3K / Mali-G51 tablet using single-ABI test builds of the same source; French/Italian/Spanish help texts, x86_64 and Adreno were not device-tested for this version. No Vulkan validation run on Mali. Compiler/import toolchains and Turnip unchanged; installed games need no recompilation. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
-
-Correction (2026-11-10): the corresponding-source zip and its SHA256SUMS file on this release were replaced. The first zip's README named 0.3.0-testing.2 and cited project-source at 91451ca, and its `TOOLCHAIN-NOTICES.md` was out of date. The APK is unchanged. This replacement is a documented exception to the rule against silently replacing published assets. The GitHub release notes do not mention it, so it is recorded here: first source zip SHA-256 `cf80dd964e11802c0e99b5c92a63f9a780377506a8580d160792690e58ec75d1`, replacement `11586149bffd569f92b99480963acc321042cdc783799c9e4cde42bcdf61ef51`.
-
-## Published stable version: 1.0.0
-
-GitHub `v1.0.0` (Release, Latest) is the exact `1.0.0-rc.1` build promoted without rebuilding: the APK, source zip and checksum files are byte-identical to the RC assets, and the tag `v1.0.0` points at the RC source commit `8c2324b`. Embedded Android version stays `1.0.0-rc.1` / code 17, debug certificate SHA-256 `1be501578a55867ac0b1fc488d516d33c07d14cfab2b43a69b8ace81e9cb8233`. Approved by the maintainer on 2026-11-16. The maintainer considers the project complete; no further work is planned. The source zip's README still names `1.0.0-rc.1` because its bytes were not changed.
-
-## Previous release candidate: 1.0.0-rc.1
-
-Android `1.0.0-rc.1` / code 17, same debug certificate; prerelease, not Latest. Same code as `0.4.0-testing.2` (menu music fix); only the version name and code changed, so the 1.0.0 line starts from the tested 0.4.0 code. Dual-ABI APK (arm64-v8a, x86_64), no embedded game code, host tests passed. The manual RC checklist above (fresh import, archive formats, upgrade preservation, controller/save/resume/mission checks) has **not** been completed on this exact APK; promotion to 1.0.0 needs those gates and explicit approval. Known open risks: untested 16-KiB page devices, Mali beyond the Mali-G51 tablet, x86_64 hardware, and campaign areas not played. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
-
-## Previous testing version: 0.4.0-testing.2
-
-Android `0.4.0-testing.2` / code 16, same debug certificate; prerelease, not Latest. Fixes the main menu music running fast with clicks (issue #4): a looping DirectSound buffer could report its own size as the play position, and the game's software mixer then overwrote music not yet played. The user confirmed by ear on the Poco X6 / Adreno 710 (120 Hz) that the music was wrong before and normal after, using a single-ABI test build of the same fix; the exact version-bumped dual-ABI APK, Mali and x86_64 were not device-tested for this version. The audio start line in the log now names the SDL driver and device format. Compiler/import toolchains and Turnip unchanged; installed games need no recompilation. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
-
-## Previous testing version: 0.2.0-testing.2
-
-Android `0.2.0-testing.2` / code 11, same debug certificate; prerelease, not Latest. Adds the manual **Share device report** launcher entry: preview, then Android share sheet or an editable GitHub issue draft. No upload client or background transmission. The report holds app/device/Android/ABI data, driver selection, Turnip eligibility and the last successful Vulkan-device initialization snapshot (ignored if older than the installed app). No identifiers, accounts, paths, logs or game files. Emulator-checked; not yet checked on physical hardware. Toolchain/Turnip sources unchanged from 0.2.0-testing.1; the source bundle is rebuilt with the new project source.
-
-For local build/test commands see `README.md`, `android/tests/README.md` and `tools/on-device-setup/README.md`.
+GitHub keeps only 1.0.0 and 1.0.0-rc.1 as releases. The earlier versions' tags remain; their GitHub releases were removed.

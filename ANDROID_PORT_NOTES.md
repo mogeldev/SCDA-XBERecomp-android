@@ -1,54 +1,6 @@
 # SCDA Android port: notes
 
-Current release: 1.0.0 (stable; the 1.0.0-rc.1 build promoted unchanged, same code as 0.4.0-testing.2). The project is complete; no further work is planned. 0.4.0-testing.2 fixed the menu music. 0.4.0-testing.1 added the faster Mali default, GPU SYNC option and Y row help. 0.3.0-testing.2 added launcher ZIP log export. 0.3.0-testing.1 added anti-aliasing, anisotropic default, start-up update check and campaign-only main menu. 0.2.0-testing.3 added on-device compilation on x86_64. 0.2.0-testing.2 added the manual Share device report (`android/tests/DEVICE_REPORT.md`). Since 0.2.0-testing.1: optional Turnip universal v4.5 with exact-source GPU detection, native launcher redesign and dual-ABI player builder. Manufacturer driver remains default. Historical sections below retain their original test scope.
-
-## 0.4.0-testing.2: menu music fix
-
-- The main menu music ran fast and clicked (issue #4, reported on 0.2 and 0.4). The game mixes it itself into a 48 ms looping DirectSound buffer and asks for the play position about every 10 ms. A mixer block ending exactly on the loop's end left the position there, so `IDirectSoundBuffer_GetCurrentPosition` returned the buffer size; the game then rewrote the whole ring, about 32 ms of it not yet played. With the 20 ms blocks of the test phone that happened about four times a second. The position now wraps (`src/xdk/dsound.cpp`).
-- The menu film `back_menu.bik` has no audio track, so movie timing was not involved.
-- The log's `audio:` start line now names the SDL driver and the device's rate, channels and block size.
-- Native runtime changed; compiler/import toolchains and Turnip are unchanged. Installed games need no recompilation.
-
-## 0.4.0-testing.1: Mali performance, GPU SYNC, row help
-
-- ARM/Mali GPUs now use the narrow pass-end barrier by default (about 20.7 to 24.5 FPS on a Mali-G51 in one Iceland view); other GPUs are unchanged. Details and limits: "Mali-G51 average-FPS pass" below.
-- Recomp Settings > PERFORMANCE > GPU SYNC (`AUTOMATIC`/`RELAXED (FASTER)`/`STRICT`) lets players override that live.
-- Y on a settings row opens a short explanation in the game's language (see "Row help" below).
-- Native runtime changed; compiler/import toolchains and Turnip are unchanged from 0.3.0-testing.2. Installed games need no recompilation.
-
-## 0.3.0-testing.2: error log export
-
-- Launcher **Export error logs (ZIP)** saves through Android's document picker; no storage permission or automatic upload.
-- Includes saved `scda*.log` runs, the last setup error (persisted on import/compile failure) and the last Vulkan report when available. No game files or saves; paths may appear inside logs, so review before sharing. No full logcat capture.
-- User-exported ZIP validated: 13 game logs, README and Vulkan report; CRC checks passed. Exact version-bumped APK not separately device-tested. Missing logs and ZIP contents covered by the host test.
-
-## 0.3.0-testing.1: anti-aliasing, defaults, update check, main menu
-
-- **ANTI-ALIASING** (Recomp Settings → GRAPHICS, Android only, saved as `post_aa`): OFF / FXAA (FAST) / SMAA; **SMAA is the default** for new/reset settings. Runs in `src/android/vulkan.cpp` over the finished frame at render resolution (HUD included), before the present blit scales it to the screen. FXAA is one FXAA 3.11-style pass; SMAA 1x uses the same reference shader and lookup textures as the desktop D3D12 path (`gpu/smaa_shader.h`, `gpu/smaa_textures.h`; threshold 0.1, 16/8 search steps), three passes. Its images exist only while enabled; switching applies live. Shaders validated with the NDK's glslc; first enable compiles them once.
-- User-reported on Adreno 710: FXAA and SMAA work with barely any performance impact. No per-pass GPU timing recorded; Mali and weaker GPUs untested.
-- **Anisotropic filtering defaults to 4x** on Android for new/reset settings (`anisotropic_filtering`); saved values are kept.
-- The launcher now checks GitHub for a newer release **quietly at each fresh app start** and shows the release notice only when one is available (not over a running import or open picker). Errors and "up to date" stay silent; **Check for updates** keeps its explicit result. Nothing is downloaded or installed.
-- The title's game mode list shows **Solo, Credits, Exit** only (`src/game/xbox_live.cpp` skips the Coop/Versus AddItem calls; `exit_menu.cpp` maps the selection back to the game's indices). User-confirmed on the phone.
-- Desktop builds keep their previous defaults and menus (`#ifdef __ANDROID__`).
-- **Windows builder retired.** Releases no longer include `SCDA-Android-<version>-Windows-Builder.zip`; setup is on-device compilation on ARM64 and x86_64. A versioned builder ZIP is refused with a message pointing to on-device compilation; old unversioned prebuilt ZIPs still import. `tools/android-builder/` remains in the repository for reference only and is no longer packaged or tested for releases.
-
-## 0.2.0-testing.3: on-device compilation on x86_64
-
-- The APK now bundles pinned LLVM/Clang/LLD 21.1.8 compiler and import tools for x86_64 as well as ARM64 (`tools/on-device-probe/packages.json`, same package versions as ARM64). APK size grew from about 137 MB to about 219 MB for all users.
-- Setup compiles for the process ABI only: x86_64 uses triple `x86_64-linux-android29` with the NDK driver's default target features (`x86-64`, `+sse4.2`, `+popcnt`, `+cx16`), validates x86_64 ELF output and links against its own `compiler/x86_64/libunwind.a`. ARM64 flags are unchanged.
-- Android 15 x86_64 emulator, separate test app (normal app data untouched): import, translation, 129/129 objects, link, loader/dispatch check and publication passed in about 5 minutes. With full campaign assets the on-device library reached the title screen at about 60 FPS.
-- The on-device x86_64 library is not byte-identical to the Windows builder output (different clang 21 distributions). Extra NDK `-cc1` defaults were tried and did not produce identical objects; the validated target-feature set was kept.
-- User-confirmed afterwards with the pre-bump test build of the same source: full ISO import through the file picker, compile and in-game on the Android 15 x86_64 emulator (6 cores, 12 GB), and full compile plus in-game on the ARM64 phone.
-- Not tested: physical x86_64 hardware, extended x86_64 campaign play, and low-storage stress.
-
-## 0.2.0-testing.1 validation
-
-- Adreno 710 phone: user confirmed Turnip start/gameplay, no apparent visual issues, chip detection and switching back. Logs verified chip `0x07010000` and Mesa Turnip, not fallback.
-- Same stationary starting scene: 60-second captures, six periodic FPS samples each: manufacturer mean 62.4 FPS, Turnip 69.3, manufacturer repeat 62.3 (~11% gain for this scene only). Not a continuous frame-time/stutter benchmark. No broad GPU or campaign claim.
-- User deleted their own app/data for a fresh test, then confirmed new launcher setup/import/compile/game start works. The assistant did not clear device data. Test APK predates final release version bump.
-- New launcher uses native landscape views, requirements categories and actual packaged license text. In-place updates retain saves/settings/imported files/caches. Existing game overwrite is still refused.
-- Full source/provenance and reconstruction record for the bundled Turnip and loader dependencies: `tools/turnip/SOURCES.md`; source attachment mandatory. Binary provenance follows upstream metadata and embedded Mesa revision, not independent byte-identical reproduction.
-- Other Adreno models remain source-listed, not physically tested. Extended stability, 16-KiB hardware, broader visuals and lifecycle/failure paths remain open.
+Current release: 1.0.0 (stable). Release history is in RELEASING.md.
 
 ## Scope
 
@@ -62,44 +14,6 @@ Current release: 1.0.0 (stable; the 1.0.0-rc.1 build promoted unchanged, same co
 - Windows/desktop game builds (D3D12 renderer, desktop menus) are out of scope and not maintained. Shared code may break them; do not build or test them. The Windows player builder (`tools/android-builder/`) is retired from 0.3.0-testing.1 and no longer released.
 - minSdk 29; **Android 10 support is experimental** (launcher window-inset fallback, guest-memory `memfd_create` syscall, API 29 compiler/import tools and a statically linked game-code unwinder).
 - Huawei AGS3K / Mali-G51 on Android 10: gameplay user-confirmed. Automatic shader workaround only for ARM vendor `0x13B5`, device name `Mali-G51`, driver `0x04800000` (r18p0): reconstruct screen-linear interpolation without `NoPerspective`, which crashes this driver's pipeline compiler. Source-specific shader cache hashes keep both variants separate. Other GPUs/drivers retain the original path. Full first-run tablet compilation → game launch → gameplay and good-looking visuals were user-confirmed, as was the Android 16 phone with no apparent regressions. Packaged compiler/linker and Windows-built library runtime checks also passed on Android 10. Longer-term visual/stability checks and broader import-format coverage remain open.
-
-## Dual-ABI releases (testing.6)
-
-- Release APKs include `arm64-v8a` and `x86_64` runtimes; no embedded game code.
-- The Windows builder translates once, compiles both ABIs with separate incremental objects, and writes `lib/arm64-v8a/libscda_code.so` and `lib/x86_64/libscda_code.so` into one private game ZIP. Its executable is now `SCDA-Android-Builder.exe`.
-- Import validates ABI headers and version, selects the app process's ABI, and publishes the existing `game/libscda_code.so` layout. Legacy single-library ZIPs remain supported. ARM64 archive/folder normalization also handles the new layout; at testing.6, x86_64 used prebuilt ZIPs (on-device compilation for x86_64 was added later, see above).
-- The exact testing.6 APK passed normal file-picker import of the new builder ZIP on the x86_64 Android 15 emulator; the x86_64 builder library reached intro/title with private campaign assets. Physical ARM64 update/gameplay on this version is not yet rechecked.
-
-## Phases
-
-| Phase | State |
-|---|---|
-| 0 Setup | done |
-| 1 Platform layer | done |
-| 2 Game code as ELF .so | done; Windows Android-ARM64 player builder implemented and tested |
-| 3 Vulkan backend | first version done |
-| 4 ARM64 devices | runs on Adreno 710; experimental Android 10 / Mali-G51 gameplay confirmed, other Mali drivers untested |
-| 5 Release | Local builds/packaging only; GitHub Actions not required |
-
-Commits: 644bd49 bring-up, 6e5a513 story boots headless, 041ba7f mission relaunch, 8344e24 pad bridge, 405cc4e Vulkan renderer, c38a742 runs on the phone, 94f4cfc late readbacks / border colours / unfiltered depth, 9a7852e 50% render default and -O2 host.
-
-## Phone gyro (testing.7)
-
-- Android adds **GYRO SOURCE: CONTROLLER / PHONE** under Recomp Settings → CONTROLLER → GYRO. PHONE is the Android default source; existing saved source selections are preserved. Gyro aiming remains off by default. Source is saved as `gyro_source`.
-- PHONE uses the device gyroscope and accelerometer with native sensor timestamps at a requested 100 Hz. Both sensors are required; missing/failed sensors log a warning and leave phone aiming inactive. No new permission or dependency is needed.
-- Enable GYRO AIMING, select PHONE, and use the existing sensitivity, YAW/ROLL/WORLD and CALIBRATE GYRO settings. Keep the phone still (preferably resting on a stable surface) for roughly two seconds to calibrate. Manual phone calibration tolerates more sensor noise than controller calibration; the menu reports DONE on success or RETRY after ten seconds without a valid still window. Phone yaw is about screen-up, pitch about screen-right; both landscape orientations are remapped. WORLD uses measured gravity. Controller-only gyro/recenter button rows show NONE for PHONE; their saved controller values are retained.
-- Separate **INVERT X AXIS / INVERT Y AXIS** toggles in GYRO apply to both phone and controller gyro, independently of stick inversion. Saved as `gyro_invert_x` / `gyro_invert_y`, default off; old configs inherit their previous stick-inversion values once to preserve gyro direction.
-- Phone input works independently of touch-overlay visibility and adds camera rotation rather than simulated stick input, only while the game's weapon-aim/sniper state is active. Motion outside aim is consumed and discarded; controller gyro behavior is unchanged. Focus loss/pause unregister sensors and discard pending motion; resume, orientation/source changes and stale samples cannot integrate a long pause into a camera turn.
-- Dual-ABI APK build and host gyro tests pass. **Physical phone checks remain required:** aim direction in both landscape orientations, sensitivity/drift/calibration, OFF/source switching, controller gyro regression, missing sensors and focus/background/resume. The user confirmed the phone gyro test build works, including the follow-up changes. This is user-reported test-build coverage, not an exhaustive sensor/device validation. Skip intro movies now defaults to ON; saved preferences remain unchanged.
-
-## User validation follow-up
-
-- On the Android 16 / Adreno 710 phone, the transition from level 1 to level 2 succeeds repeatedly in the user's current build. The previously reported problem is no longer reproducible in this scenario; the responsible change has not been identified. The exact installed APK version was not recorded for this follow-up. Other level transitions are not covered by this result.
-- No further tablet testing is planned by the user; future manual testing focuses on the phone. Existing Huawei AGS3K / Mali-G51 results remain valid within their recorded scope. Tablet level transitions and extended tablet stability remain unverified, not required next-session tasks.
-
-## Next session
-
-1. Continue phone gameplay/level-transition coverage when the user chooses to test. Broader Mali/Android 10 import-format coverage remains an open limitation, without a planned tablet test.
 
 ## Architecture
 
