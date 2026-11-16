@@ -4,7 +4,7 @@ Unofficial **original Xbox → Android** port using static recompilation, Vulkan
 
 **[Download](https://github.com/mogeldev/SCDA-XBERecomp-android/releases) · [Player guide / Wiki](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki) · [Report a bug](https://github.com/mogeldev/SCDA-XBERecomp-android/issues)**
 
-- **Testing prerelease, not stable.** Android 10+ (10 experimental), ARM64 or x86_64, Vulkan 1.1.
+- **Stable release 1.0.0.** Android 10+ (10 experimental), ARM64 or x86_64, Vulkan 1.1.
 - Bring your own supported **original-Xbox game**; PC/Xbox 360 versions do not work. No game content included.
 - Install the APK, import your game and let the device compile it. [Setup and supported game](https://github.com/mogeldev/SCDA-XBERecomp-android/wiki/Setup).
 - **Update over the existing app.** Uninstalling or clearing app data deletes saves/settings.

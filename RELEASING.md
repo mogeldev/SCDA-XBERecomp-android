@@ -105,7 +105,11 @@ Android `0.4.0-testing.1` / code 15, same debug certificate; prerelease, not Lat
 
 Correction (2026-11-10): the corresponding-source zip and its SHA256SUMS file on this release were replaced. The first zip's README named 0.3.0-testing.2 and cited project-source at 91451ca, and its `TOOLCHAIN-NOTICES.md` was out of date. The APK is unchanged. This replacement is a documented exception to the rule against silently replacing published assets. The GitHub release notes do not mention it, so it is recorded here: first source zip SHA-256 `cf80dd964e11802c0e99b5c92a63f9a780377506a8580d160792690e58ec75d1`, replacement `11586149bffd569f92b99480963acc321042cdc783799c9e4cde42bcdf61ef51`.
 
-## Published release candidate: 1.0.0-rc.1
+## Published stable version: 1.0.0
+
+GitHub `v1.0.0` (Release, Latest) is the exact `1.0.0-rc.1` build promoted without rebuilding: the APK, source zip and checksum files are byte-identical to the RC assets, and the tag `v1.0.0` points at the RC source commit `8c2324b`. Embedded Android version stays `1.0.0-rc.1` / code 17, debug certificate SHA-256 `1be501578a55867ac0b1fc488d516d33c07d14cfab2b43a69b8ace81e9cb8233`. Approved by the maintainer on 2026-11-16. The manual RC checklist above was **not** run in full before promotion; this was the maintainer's decision, and the remaining risks (untested 16-KiB page devices, Mali beyond G51, x86_64 hardware, unplayed campaign areas) stay documented. The maintainer considers the project complete; no further work is planned. The source zip's README still names `1.0.0-rc.1` because its bytes were not changed.
+
+## Previous release candidate: 1.0.0-rc.1
 
 Android `1.0.0-rc.1` / code 17, same debug certificate; prerelease, not Latest. Same code as `0.4.0-testing.2` (menu music fix); only the version name and code changed, so the 1.0.0 line starts from the tested 0.4.0 code. Dual-ABI APK (arm64-v8a, x86_64), no embedded game code, host tests passed. The manual RC checklist above (fresh import, archive formats, upgrade preservation, controller/save/resume/mission checks) has **not** been completed on this exact APK; promotion to 1.0.0 needs those gates and explicit approval. Known open risks: untested 16-KiB page devices, Mali beyond the Mali-G51 tablet, x86_64 hardware, and campaign areas not played. Assets: dual-ABI APK, corresponding source and SHA-256 sums; no Windows builder.
 
